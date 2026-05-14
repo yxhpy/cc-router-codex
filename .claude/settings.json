@@ -1,0 +1,51 @@
+{
+  "enabledPlugins": {
+    "task-decompose": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(codex:*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Task|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_intercept_create.py",
+            "timeout": 10,
+            "statusMessage": "Enforcing taskctl and model policy..."
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_user_prompt_submit.py",
+            "timeout": 30,
+            "statusMessage": "Routing user goal through taskctl..."
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_session_start.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

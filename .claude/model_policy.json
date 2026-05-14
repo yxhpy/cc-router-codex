@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "sources": [
+    "https://developers.openai.com/api/docs/models",
+    "https://developers.openai.com/api/docs/guides/latest-model"
+  ],
+  "principles": [
+    "Use gpt-5.5 for complex reasoning, coding, tool-heavy agents, long-context synthesis, architecture, implementation, and review.",
+    "Use gpt-5.4 when the task is still professional coding work but the quality risk is lower and cost/latency matters.",
+    "Use gpt-5.4-mini or gpt-5.4-nano only for simple high-volume routing, extraction, classification, ranking, summarization, or cheap subagent work outside the main production worker loop.",
+    "Start with medium reasoning for balanced quality, then raise to high for architecture, implementation, review, and hard debugging. Reserve xhigh/pro-class models for asynchronous evals or exceptional hard tasks."
+  ],
+  "default": {
+    "model": "gpt-5.5",
+    "reasoning_effort": "medium",
+    "why": "Default to the current flagship for complex reasoning and coding."
+  },
+  "roles": {
+    "planner": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Owns decomposition, dependency structure, success criteria, and worker prompts."
+    },
+    "divergent": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "medium",
+      "why": "Explores options and rejects unsafe routes."
+    },
+    "requirements": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "medium",
+      "why": "Turns product intent into precise acceptance gates."
+    },
+    "uiux": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Needs visual, product, and existing-system consistency."
+    },
+    "prototype": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Converts requirements and style contracts into an implementable design."
+    },
+    "fullstack": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Highest blast radius: code edits, integration, and architecture preservation."
+    },
+    "tester": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "why": "Runs verification and targeted fixes with lower creative/architecture risk."
+    },
+    "reviewer": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Needs strong bug finding, regression analysis, and quality judgment."
+    },
+    "closer": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "why": "Audits artifacts and summarizes closure after work is done."
+    }
+  },
+  "manual_overrides": {
+    "CODEX_MODEL": "Overrides the selected model for emergency or experiment runs.",
+    "CODEX_REASONING_EFFORT": "Overrides the selected reasoning effort for emergency or experiment runs.",
+    "TASKCTL_MODEL_POLICY": "Set to off to disable taskctl model routing.",
+    "TASKCTL_MODEL_POLICY_PATH": "Path to an alternate JSON policy file."
+  }
+}

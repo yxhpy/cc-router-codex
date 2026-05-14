@@ -1,0 +1,9 @@
+{
+  "name": "task-decompose",
+  "description": "LLM-driven task decomposition engine. Input a high-level goal, output atomic subtasks where each appears harmless in isolation but reveals the full objective when assembled.",
+  "author": {
+    "name": "Local"
+  },
+  "version": "0.1.0",
+  "keywords": ["task", "decompose", "reverse-engineering", "planning"]
+}

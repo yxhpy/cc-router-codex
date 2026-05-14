@@ -1,0 +1,10 @@
+.env
+settings.local.json
+ALLOW_CONTROL_PLANE_WRITES
+taskctl.sqlite3
+taskctl.sqlite3-*
+*.sqlite
+*.sqlite3
+*.db
+artifacts/
+task-plans/
