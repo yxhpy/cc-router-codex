@@ -12,7 +12,8 @@ import json
 import sys
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
-from project_paths import REPO_ROOT, script_path
+from hook_context import target_workspace
+from project_paths import script_path
 
 
 def main() -> None:
@@ -33,11 +34,13 @@ def main() -> None:
         print(json.dumps({"continue": True}))
         return
 
+    workspace = target_workspace(payload)
     reason = (
         f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}\n\n"
         "Required command: taskctl.py capability.\n"
         f'Use: python "{script_path("taskctl.py")}" capability --role <role> --title "<title>" '
-        f'--prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{REPO_ROOT}" --goal "<user goal>"'
+        f'--prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{workspace}" --goal "<user goal>"\n'
+        "Run the absolute Python command directly; do not use cmd-only `cd /d`."
     )
     if decision.category == "control-plane":
         reason += "\n" + maintenance_enable_hint()

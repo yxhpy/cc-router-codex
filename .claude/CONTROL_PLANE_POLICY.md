@@ -36,10 +36,13 @@ scratch directory.
 
 - Scripts must resolve the repository root from `__file__`, not from the
   shell's current directory.
-- Generated task commands must pass `--workspace <repo-root>`.
+- Hook script paths may point at this control-plane repository from any Claude
+  session, but generated task commands must pass `--workspace <target-project>`.
 - Worker subprocesses must run with `cwd` set to the stored job workspace.
 - Logs default to `<workspace>/logs/codex` so changing directories does not
   scatter logs.
+- Do not prepend `cd /d` to suggested Bash commands. `cd /d` is `cmd.exe`
+  syntax and fails under Bash; run the absolute Python script path directly.
 
 ## Claude Direct Writes
 
@@ -68,5 +71,5 @@ Claude controller direct writes are intentionally narrow:
 - Product implementation remains Codex-owned through:
 
 ```bash
-python .claude/scripts/taskctl.py capability --role fullstack --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<repo-root>" --goal "<user goal>"
+python C:/path/to/cc-router-codex/.claude/scripts/taskctl.py capability --role fullstack --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<target-project>" --goal "<user goal>"
 ```

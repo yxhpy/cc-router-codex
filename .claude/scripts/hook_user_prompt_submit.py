@@ -12,7 +12,8 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import llm_router
-from project_paths import REPO_ROOT, script_path
+from hook_context import target_workspace
+from project_paths import script_path
 
 
 def read_hook_json() -> dict[str, object]:
@@ -47,14 +48,14 @@ def artifact_args(artifacts: list[str]) -> str:
     return " ".join(f"--artifact {ps_quote(item)}" for item in artifacts)
 
 
-def suggested_command(route: llm_router.Route, prompt: str) -> str:
+def suggested_command(route: llm_router.Route, prompt: str, workspace: str) -> str:
     return (
         f"python {ps_quote(str(script_path('taskctl.py')))} capability "
         f"--role {route.role} "
         f"--title {ps_quote(route.title)} "
         f"--prompt {ps_quote(route.worker_prompt)} "
         f"{artifact_args(route.artifacts)} "
-        f"--workspace {ps_quote(str(REPO_ROOT))} "
+        f"--workspace {ps_quote(workspace)} "
         f"--goal {ps_quote(prompt)}"
     )
 
@@ -70,7 +71,7 @@ def composition_context(route: llm_router.Route) -> str:
     return "\n".join(lines)
 
 
-def routing_context(prompt: str, route: llm_router.Route) -> str:
+def routing_context(prompt: str, route: llm_router.Route, workspace: str) -> str:
     route_note = f"Router source: {route.source}; confidence: {route.confidence:.2f}; reason: {route.reason}"
     if route.error:
         route_note += f"; router_error: {route.error}"
@@ -83,6 +84,9 @@ Do not directly write/edit product files from the controller context.
 
 Required action: run exactly one atomic capability command through SQLite.
 Required command name: taskctl.py capability.
+Target workspace: {workspace}
+The control-plane script path is fixed, but `--workspace` must stay on the
+Claude session's target project directory.
 
 LLM-suggested capability composition, not a fixed workflow:
 {composition_context(route)}
@@ -92,7 +96,11 @@ and audit result, then decide whether to run, skip, or revise later suggested
 capabilities. Do not enqueue the whole composition.
 
 Recommended next tool call is Bash with:
-{suggested_command(route, prompt)}
+{suggested_command(route, prompt, workspace)}
+
+Run the absolute Python command directly. Do not `cd /d`, and do not change
+into the control-plane repository unless that is the user's actual target
+workspace.
 
 Do not call Write, Edit, MultiEdit, or shell file-writing commands before this
 control-plane command.
@@ -137,11 +145,12 @@ def main() -> int:
         print(json.dumps({"continue": True}))
         return 0
 
+    workspace = target_workspace(payload)
     print(json.dumps({
         "continue": True,
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": routing_context(prompt, route),
+            "additionalContext": routing_context(prompt, route, workspace),
         },
     }, ensure_ascii=False))
     return 0

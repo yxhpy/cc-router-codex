@@ -10,8 +10,9 @@ skill invocation.
    its own context.
 3. All production work must be represented in SQLite through
    `python .claude/scripts/taskctl.py`.
-   Capability commands must pass the repository root as `--workspace`; scripts
-   must resolve repo paths from `__file__`, not from the caller's shell CWD.
+   Capability commands must pass the Claude session's target project directory
+   as `--workspace`; scripts must resolve control-plane paths from `__file__`,
+   not from the caller's shell CWD.
 4. Use `capability` as the normal production command. It validates the
    Codex-bound prompt, stores one SQLite job/task, executes one Codex worker,
    auto-records expected artifact paths when files exist, and prints the audit

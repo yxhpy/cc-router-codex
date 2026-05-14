@@ -10,8 +10,9 @@ These rules apply even when no skill is explicitly invoked.
   limited to runtime state documented in `.claude/CONTROL_PLANE_POLICY.md`;
   control-plane source/config writes require explicit maintenance mode.
 - Control-plane scripts resolve the repository root from their own file path.
-  Generated capability commands must pass the repository root as `--workspace`
-  so shell directory drift does not change behavior.
+  Generated capability commands must pass the Claude session's target project
+  directory as `--workspace`; the hook script path may be absolute and live in
+  this control-plane repository.
 - User prompt routing and semantic task-input guarding are LLM-backed through
   `.claude/scripts/llm_router.py`. Provider/model settings live in
   `.claude/.env`; Codex CLI `gpt-5.4-mini` with an output schema is preferred

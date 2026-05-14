@@ -8,7 +8,8 @@ import re
 import sys
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
-from project_paths import REPO_ROOT, script_path
+from hook_context import target_workspace
+from project_paths import script_path
 
 
 SAFE_SCRIPT_NAMES = (
@@ -51,11 +52,16 @@ SAFE_BASH_CMDS = [
     r"^rg\b",
 ]
 
-TASKCTL_GUIDANCE = f"""Do not write production files directly from Claude.
-Use exactly one atomic control-plane command from the repo root.
+def taskctl_guidance(workspace: str) -> str:
+    return f"""Do not write production files directly from Claude.
+Use exactly one atomic control-plane command for the target project workspace.
 Required command: taskctl.py capability.
 
-python "{script_path('taskctl.py')}" capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{REPO_ROOT}" --goal "<user goal>"
+python "{script_path('taskctl.py')}" capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{workspace}" --goal "<user goal>"
+
+Run the absolute Python command directly. Do not use cmd-only `cd /d`, and do
+not change into the control-plane repository unless it is the user's actual
+target project.
 
 Allowed direct Claude writes are limited to runtime state under .claude/artifacts
 and .claude/task-plans. Control-plane source/config writes need explicit
@@ -64,8 +70,8 @@ taskctl, normally using role fullstack.
 """
 
 
-def block(reason: str) -> None:
-    message = f"{reason}\n\n{TASKCTL_GUIDANCE}"
+def block(reason: str, workspace: str) -> None:
+    message = f"{reason}\n\n{taskctl_guidance(workspace)}"
     print(json.dumps({
         "decision": "block",
         "reason": message,
@@ -166,7 +172,7 @@ def has_file_creation(bash_cmd: str) -> bool:
     return True
 
 
-def handle_write(tool_name: str, tool_input: dict[str, object]) -> None:
+def handle_write(tool_name: str, tool_input: dict[str, object], workspace: str) -> None:
     file_path = str(tool_input.get("file_path", ""))
     decision = classify_direct_write(file_path)
     if decision.allowed:
@@ -176,7 +182,7 @@ def handle_write(tool_name: str, tool_input: dict[str, object]) -> None:
     extra = ""
     if decision.category == "control-plane":
         extra = "\n" + maintenance_enable_hint()
-    block(f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}{extra}")
+    block(f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}{extra}", workspace)
 
 
 def main() -> None:
@@ -189,18 +195,19 @@ def main() -> None:
     tool_name = str(hook_input.get("tool_name", ""))
     raw_tool_input = hook_input.get("tool_input", {})
     tool_input = raw_tool_input if isinstance(raw_tool_input, dict) else {}
+    workspace = target_workspace(hook_input)
 
     if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        handle_write(tool_name, tool_input)
+        handle_write(tool_name, tool_input, workspace)
         return
 
     if tool_name == "Task":
-        block("Task/Subagent blocked: use taskctl capability instead")
+        block("Task/Subagent blocked: use taskctl capability instead", workspace)
 
     if tool_name == "Bash":
         bash_cmd = str(tool_input.get("command", ""))
         if has_file_creation(bash_cmd):
-            block(f"Bash file operation blocked: {bash_cmd[:200]}")
+            block(f"Bash file operation blocked: {bash_cmd[:200]}", workspace)
         print(json.dumps({"continue": True}))
         return
 

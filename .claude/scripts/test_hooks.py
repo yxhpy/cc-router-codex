@@ -251,6 +251,36 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
+    def test_user_prompt_uses_payload_cwd_as_target_workspace(self) -> None:
+        target_workspace = (ROOT.parent / "external-target-project").resolve()
+        code, output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": "Build a single page arcade game.", "cwd": str(target_workspace)},
+            router_mock(artifacts=["html:index.html"]),
+        )
+
+        self.assertEqual(code, 0)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn(f"Target workspace: {target_workspace}", context)
+        self.assertIn(f'--workspace "{target_workspace}"', context)
+        self.assertNotIn(f'--workspace "{ROOT}"', context)
+
+    def test_block_guidance_uses_payload_cwd_as_target_workspace(self) -> None:
+        target_workspace = (ROOT.parent / "external-target-project").resolve()
+        code, output = run_hook(
+            HOOK,
+            {
+                "tool_name": "Write",
+                "tool_input": {"file_path": "index.html"},
+                "cwd": str(target_workspace),
+            },
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn(f'--workspace "{target_workspace}"', output["reason"])
+        self.assertNotIn(f'--workspace "{ROOT}"', output["reason"])
+
     def test_user_prompt_notes_fixed_workflows_are_legacy_templates(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
