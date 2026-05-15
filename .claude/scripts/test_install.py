@@ -26,17 +26,22 @@ def make_source(root: Path) -> Path:
     (source / ".claude" / "task-plans").mkdir()
     (source / ".claude" / "artifacts").mkdir()
     (source / ".claude" / "scripts" / "hook_session_start.py").write_text("print('session')\n", encoding="utf-8")
+    (source / ".claude" / "scripts" / "hook_stop_focus.py").write_text("print('stop')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "hook_intercept_create.py").write_text("print('pre')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "hook_user_prompt_submit.py").write_text("print('prompt')\n", encoding="utf-8")
     (source / ".claude" / "task-plans" / "route-cache.json").write_text("{}", encoding="utf-8")
     (source / ".claude" / "artifacts" / "old.txt").write_text("runtime", encoding="utf-8")
+    (source / ".claude" / ".prompt-searcher").mkdir()
+    (source / ".claude" / ".prompt-searcher" / "install.json").write_text("{}", encoding="utf-8")
     (source / ".claude" / ".env.example").write_text(
         "\n".join(
             [
                 "TASKCTL_ROUTER_PROVIDER=openai",
                 "TASKCTL_ROUTER_CODEX_MODEL=gpt-5.4-mini",
                 "TASKCTL_INPUT_GUARD_PROVIDER=openai",
+                "ASSETGEN_CODEX_MODEL=gpt-5.4-mini",
                 "ASSETGEN_CODEX_TIMEOUT=900",
+                "ASSETGEN_PROMPT_MCP_TARGET=.prompt-searcher",
             ]
         )
         + "\n",
@@ -66,12 +71,23 @@ def make_source(root: Path) -> Path:
                             ]
                         }
                     ],
+                    "Stop": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "python .claude/scripts/hook_stop_focus.py",
+                                }
+                            ]
+                        }
+                    ],
                 }
             }
         ),
         encoding="utf-8",
     )
     (source / "CLAUDE.md").write_text("# Rules\n", encoding="utf-8")
+    (source / "VERSIONING.md").write_text("# Versioning\n", encoding="utf-8")
     return source
 
 
@@ -89,18 +105,59 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(result.target, target.resolve())
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertTrue((target / "VERSIONING.md").exists())
             self.assertFalse((target / ".claude" / "task-plans" / "route-cache.json").exists())
             self.assertFalse((target / ".claude" / "artifacts" / "old.txt").exists())
+            self.assertFalse((target / ".claude" / ".prompt-searcher").exists())
             self.assertTrue((target / ".claude" / "task-plans").is_dir())
             env_text = (target / ".claude" / ".env").read_text(encoding="utf-8")
             self.assertIn("TASKCTL_INSTALL_OS=windows", env_text)
             self.assertIn("TASKCTL_PYTHON=C:/Python/python.exe", env_text)
             self.assertIn("CODEX_BIN=C:/npm/codex.cmd", env_text)
             self.assertIn("TASKCTL_ROUTER_PROVIDER=codex", env_text)
+            self.assertIn("ASSETGEN_CODEX_MODEL=gpt-5.4-mini", env_text)
+            self.assertIn("ASSETGEN_PROMPT_MCP_TARGET=.prompt-searcher", env_text)
+            self.assertIn("ASSETGEN_PROMPT_MCP_REPO=https://github.com/yxhpy/image-2-prompt", env_text)
+            self.assertIn("ASSETGEN_PROMPT_MCP_VERSION_TIMEOUT=5", env_text)
+            self.assertIn("ASSETGEN_PROMPT_MCP_LATEST_TTL_SECONDS=3600", env_text)
 
             settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
             command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             self.assertEqual(command, "C:/Python/python.exe .claude/scripts/hook_session_start.py")
+            stop_command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
+            self.assertEqual(stop_command, "C:/Python/python.exe .claude/scripts/hook_stop_focus.py")
+            allow = settings["permissions"]["allow"]
+            self.assertIn("Bash(python *)", allow)
+            self.assertIn("Bash(codex *)", allow)
+            self.assertIn("Bash(C:/Python/python.exe *)", allow)
+            self.assertIn("Bash(C:/npm/codex.cmd *)", allow)
+
+    def test_installer_quotes_permission_rules_for_paths_with_spaces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = make_source(root)
+            target = root / "target"
+            detection = installer.Detection(
+                "windows",
+                "C:/Program Files/Python/python.exe",
+                "C:/Program Files/node/codex.cmd",
+            )
+
+            with mock.patch.object(installer, "detect_system", return_value=detection):
+                installer.install_control_plane(source_root=source, target=target, yes=True)
+
+            settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
+            command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            allow = settings["permissions"]["allow"]
+            self.assertEqual(command, '"C:/Program Files/Python/python.exe" .claude/scripts/hook_session_start.py')
+            self.assertIn('Bash("C:/Program Files/Python/python.exe" *)', allow)
+            self.assertIn('Bash("C:/Program Files/node/codex.cmd" *)', allow)
+
+    def test_windows_command_paths_are_normalized_for_bash(self) -> None:
+        self.assertEqual(
+            installer.normalize_command_path(r"C:\Users\alice\AppData\Local\Programs\Python\python.exe"),
+            "C:/Users/alice/AppData/Local/Programs/Python/python.exe",
+        )
 
     def test_existing_install_requires_y_before_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -133,6 +190,7 @@ class InstallTests(unittest.TestCase):
 
             self.assertFalse((target / ".claude" / "old.txt").exists())
             self.assertEqual((target / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
+            self.assertEqual((target / "VERSIONING.md").read_text(encoding="utf-8"), "# Versioning\n")
 
     def test_refuses_to_install_over_source_repository(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

@@ -4,6 +4,7 @@
 !.claude/.env.example
 
 logs/
+.prompt-searcher/
 *.log
 *.tmp
 *.bak

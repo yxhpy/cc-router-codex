@@ -15,7 +15,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "scripts" / "hook_intercept_create.py"
 PROMPT_HOOK = ROOT / ".claude" / "scripts" / "hook_user_prompt_submit.py"
+STOP_HOOK = ROOT / ".claude" / "scripts" / "hook_stop_focus.py"
 MAINTENANCE_MARKER = ROOT / ".claude" / "ALLOW_CONTROL_PLANE_WRITES"
+FOCUS_STATE = ROOT / ".claude" / "task-plans" / "focus_state.json"
 
 
 def run_hook(path: Path, payload: dict[str, object], env: dict[str, str] | None = None) -> tuple[int, dict[str, object]]:
@@ -63,6 +65,8 @@ class HookTests(unittest.TestCase):
     def tearDown(self) -> None:
         if MAINTENANCE_MARKER.exists():
             MAINTENANCE_MARKER.unlink()
+        if FOCUS_STATE.exists():
+            FOCUS_STATE.unlink()
 
     def test_settings_hook_commands_are_repo_relative(self) -> None:
         settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
@@ -271,8 +275,46 @@ class HookTests(unittest.TestCase):
         self.assertIn("Router source: mock", context)
         self.assertIn('--artifact "html:sample-page.html"', context)
         self.assertIn("--route-token", context)
+        self.assertIn("Hard focus rule", context)
+        self.assertTrue(FOCUS_STATE.exists())
+        focus = json.loads(FOCUS_STATE.read_text(encoding="utf-8"))
+        self.assertEqual(focus["status"], "active")
+        self.assertEqual(focus["route"]["role"], "fullstack")
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
+
+    def test_stop_hook_blocks_active_focus_until_complete_or_exhausted(self) -> None:
+        code, _output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": "Create a focused smoke artifact.", "cwd": str(ROOT)},
+            router_mock(artifacts=["test_report:.claude/artifacts/focus-smoke.md"]),
+        )
+        self.assertEqual(code, 0)
+
+        blocked_code, blocked = run_hook(STOP_HOOK, {"cwd": str(ROOT)})
+        self.assertEqual(blocked_code, 2)
+        self.assertEqual(blocked["decision"], "block")
+        self.assertIn("FOCUS_GUARD_BLOCK", blocked["reason"])
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(ROOT / ".claude" / "scripts" / "focus_guard.py"),
+                "complete",
+                "--workspace",
+                str(ROOT),
+                "--evidence",
+                "test artifact exists",
+            ],
+            cwd=str(ROOT),
+            text=True,
+            capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        allowed_code, allowed = run_hook(STOP_HOOK, {"cwd": str(ROOT)})
+        self.assertEqual(allowed_code, 0)
+        self.assertTrue(allowed["continue"])
 
     def test_user_prompt_uses_payload_cwd_as_target_workspace(self) -> None:
         target_workspace = (ROOT.parent / "target-workspace").resolve()

@@ -42,9 +42,9 @@
       "why": "Converts requirements and style contracts into an implementable design."
     },
     "assetgen": {
-      "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Generates or places polished local image assets and manifests with visual-quality risk."
+      "model": "gpt-5.4-mini",
+      "reasoning_effort": "medium",
+      "why": "Image generation now uses local MCP prompt-template retrieval before handing a focused prompt to the raster backend; gpt-5.4-mini is sufficient for this bounded adapter step."
     },
     "fullstack": {
       "model": "gpt-5.5",

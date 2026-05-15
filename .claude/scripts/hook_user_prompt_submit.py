@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import llm_router
+import focus_guard
 import route_cache
 from hook_context import target_workspace
 from project_paths import python_command, script_path
@@ -113,6 +114,16 @@ executes one Codex worker, auto-records expected artifact paths when files exist
 and prints the audit result. Use `status` or `audit` only after the command
 returns or fails.
 
+Hard focus rule: this goal is now active in `.claude/task-plans/focus_state.json`.
+You are not allowed to stop while it is active. The Stop hook will block final
+answers until one of these explicit state transitions is recorded:
+- Success: `python .claude/scripts/focus_guard.py complete --workspace {ps_quote(workspace)} --evidence "<created artifacts, tests, and result>"`
+- Exhausted: `python .claude/scripts/focus_guard.py exhausted --workspace {ps_quote(workspace)} --evidence "<all attempted routes, searches, blockers, and why no route remains>"`
+If a capability fails or only partially works, record the attempt with
+`focus_guard.py attempt`, inspect logs/artifacts, search or try another viable
+route, and continue. Do not ask the user for direction until all viable routes
+have been tried and recorded as exhausted.
+
 Role boundaries are enforced by the Python filter before Codex can run:
 planner/divergent/requirements/reviewer/closer are analysis-only, uiux is
 design-only, prototype is spec-only, assetgen is image-asset-only, fullstack is
@@ -167,6 +178,18 @@ def main() -> int:
             )
         except OSError:
             route_token = ""
+    try:
+        focus_guard.start_focus(
+            workspace=workspace,
+            goal=prompt,
+            role=route.role,
+            title=route.title,
+            artifacts=route.artifacts,
+            route_token=route_token,
+            source=route.source,
+        )
+    except OSError:
+        pass
     print(json.dumps({
         "continue": True,
         "hookSpecificOutput": {

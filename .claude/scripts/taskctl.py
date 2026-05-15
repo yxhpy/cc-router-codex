@@ -75,7 +75,7 @@ ROLE_BOUNDARIES = {
     "requirements": "Produce requirements, acceptance checks, and constraints only. Do not create or modify product code.",
     "uiux": "Produce design artifacts only, such as style inventory, design reference selection, component map, style contract, or visual review notes. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "prototype": "Produce prototype specifications, DOM/interaction contracts, and behavior notes only. Do not create production UI code.",
-    "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py, such as game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
+    "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py. That script must fast-check/install the local image-2-prompt MCP, compare installed/latest MCP git commit versions and warn if an upgrade may be needed, retrieve prompt templates, and use gpt-5.4-mini before raster generation. Assetgen covers game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
     "fullstack": "You may create or modify product implementation code for frontend, backend, database, scripts, and production HTML as requested.",
     "tester": "Produce verification reports, screenshots, and test files under test paths only. Do not modify production source files.",
     "reviewer": "Produce review findings and risk reports only. Do not patch product code.",
@@ -376,9 +376,13 @@ source traceability is mandatory:
   capability is required before implementation instead of inventing style.
 - Prefer project/open-license high-quality images or video for real product,
   place, people, or atmosphere visuals. Assetgen outputs must be local raster
-  files generated through `.claude/scripts/assetgen_exec.py`; do not use SVG as
-  an assetgen fallback. SVG remains limited to manually coded icons, logos,
-  diagrams, or tiny functional marks when the design source requires it.
+  files generated through `.claude/scripts/assetgen_exec.py`; assetgen first
+  uses `.claude/scripts/prompt_template_mcp.py` to fast-check or install the
+  local `image-2-prompt` MCP, compare installed/latest MCP git commit versions
+  and warn if an upgrade may be needed, retrieve prompt templates, and use
+  `gpt-5.4-mini` for the bounded prompt adapter. Do not use SVG as an assetgen
+  fallback. SVG remains limited to manually coded icons, logos, diagrams, or
+  tiny functional marks when the design source requires it.
 - If suitable local/open-license media is missing, generated bitmap assets are
   an allowed localization path. UI/UX tasks should record an
   asset_generation_brief with prompts, style constraints, dimensions, and
@@ -1030,6 +1034,8 @@ def build_worker_command(
             strip_task_footers(task["prompt"]),
             "--asset-role",
             infer_asset_role(task["title"], task["prompt"]),
+            "--prompt-template-top",
+            os.environ.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3"),
         ]
         for output_path in outputs:
             cmd.extend(["--output", output_path])

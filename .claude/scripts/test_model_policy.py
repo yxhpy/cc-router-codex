@@ -36,11 +36,11 @@ class ModelPolicyTests(unittest.TestCase):
         self.assertEqual(choice.reasoning_effort, "high")
         self.assertEqual(choice.source, "role:fullstack")
 
-    def test_assetgen_uses_high_quality_visual_model(self) -> None:
+    def test_assetgen_uses_mini_model_for_prompt_template_adapter(self) -> None:
         choice = model_policy.select_model("general", "assetgen", model_policy.FALLBACK_POLICY)
 
-        self.assertEqual(choice.model, "gpt-5.5")
-        self.assertEqual(choice.reasoning_effort, "high")
+        self.assertEqual(choice.model, "gpt-5.4-mini")
+        self.assertEqual(choice.reasoning_effort, "medium")
         self.assertEqual(choice.source, "role:assetgen")
 
     def test_env_overrides_are_visible_without_losing_policy_source(self) -> None:

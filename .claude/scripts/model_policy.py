@@ -29,7 +29,7 @@ FALLBACK_POLICY: dict[str, Any] = {
         "requirements": {"model": "gpt-5.5", "reasoning_effort": "medium"},
         "uiux": {"model": "gpt-5.5", "reasoning_effort": "high"},
         "prototype": {"model": "gpt-5.5", "reasoning_effort": "high"},
-        "assetgen": {"model": "gpt-5.5", "reasoning_effort": "high"},
+        "assetgen": {"model": "gpt-5.4-mini", "reasoning_effort": "medium"},
         "fullstack": {"model": "gpt-5.5", "reasoning_effort": "high"},
         "tester": {"model": "gpt-5.4", "reasoning_effort": "medium"},
         "reviewer": {"model": "gpt-5.5", "reasoning_effort": "high"},

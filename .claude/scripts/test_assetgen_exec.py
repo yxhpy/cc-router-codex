@@ -36,7 +36,11 @@ class AssetgenExecTests(unittest.TestCase):
                 self.assertIn("--output-schema", command)
                 self.assertIn("--output-last-message", command)
                 self.assertIn("--add-dir", command)
+                self.assertIn("--model", command)
+                self.assertIn("gpt-5.4-mini", command)
                 self.assertIn("Do not create SVG", kwargs["input"])
+                self.assertIn("Retrieved prompt-template context:", kwargs["input"])
+                self.assertIn("Template context from MCP", kwargs["input"])
                 message_path = Path(command[command.index("--output-last-message") + 1])
                 output_path.parent.mkdir(parents=True, exist_ok=True)
                 output_path.write_bytes(PNG_BYTES)
@@ -58,7 +62,14 @@ class AssetgenExecTests(unittest.TestCase):
                 )
                 return mock.Mock(returncode=0, stdout="", stderr="")
 
-            with mock.patch.object(assetgen_exec.subprocess, "run", side_effect=fake_run):
+            prompt_context = {
+                "text": "Template context from MCP",
+                "metadata": {"query": "type:template hero", "template_ids": ["template:hero"]},
+            }
+            with (
+                mock.patch.object(assetgen_exec.subprocess, "run", side_effect=fake_run),
+                mock.patch.object(assetgen_exec.prompt_template_mcp, "build_asset_prompt_context", return_value=prompt_context),
+            ):
                 code = assetgen_exec.main(
                     [
                         "--workspace",
@@ -81,6 +92,7 @@ class AssetgenExecTests(unittest.TestCase):
             manifest = json.loads((workspace / manifest_rel).read_text(encoding="utf-8"))
             self.assertEqual(manifest["backend"], "codex")
             self.assertEqual(manifest["images"][0]["path"], output_rel)
+            self.assertEqual(manifest["prompt_template_mcp"]["template_ids"], ["template:hero"])
 
 
 if __name__ == "__main__":

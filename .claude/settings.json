@@ -4,6 +4,12 @@
   },
   "permissions": {
     "allow": [
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(py *)",
+      "Bash(codex *)",
+      "Bash(codex.cmd *)",
+      "Bash(codex.exe *)",
       "Bash(python:*)",
       "Bash(codex:*)"
     ]
@@ -43,6 +49,19 @@
             "type": "command",
             "command": "python .claude/scripts/hook_session_start.py",
             "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python .claude/scripts/hook_stop_focus.py",
+            "timeout": 10,
+            "statusMessage": "Enforcing active-goal focus..."
           }
         ]
       }

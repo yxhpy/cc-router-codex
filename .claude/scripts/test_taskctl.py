@@ -204,6 +204,8 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn("assets/generated/hero.png", dry_run["command"])
         self.assertIn("--manifest", dry_run["command"])
         self.assertIn("assets/generated/manifest.json", dry_run["command"])
+        self.assertIn("gpt-5.4-mini", dry_run["command"])
+        self.assertIn("--prompt-template-top", dry_run["command"])
 
     def test_execute_task_requires_step_artifacts(self) -> None:
         job_id = self.submit_job()

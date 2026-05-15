@@ -19,6 +19,8 @@ SAFE_SCRIPT_NAMES = (
     "safety_filter",
     "task_input_filter",
     "sync_design_refs",
+    "prompt_template_mcp",
+    "focus_guard",
     "mcp_inventory",
     "hook_",
 )

@@ -37,6 +37,7 @@ def main() -> int:
         "test_model_policy.py",
         "test_codex_exec.py",
         "test_assetgen_exec.py",
+        "test_prompt_template_mcp.py",
         "test_install.py",
         "test_sync_design_refs.py",
         "test_safety_filter.py",

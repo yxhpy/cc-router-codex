@@ -47,6 +47,11 @@ python .claude/scripts/taskctl.py capability --role <role> --title "<title>" --p
 - Controller model: choose one bounded capability input, run `taskctl.py
   capability`, inspect the result, and decide whether another capability is
   needed.
+- Focus guard: production goals remain active in
+  `.claude/task-plans/focus_state.json` until the controller records
+  `focus_guard.py complete` with result evidence or `focus_guard.py exhausted`
+  with attempted routes and blockers. The Stop hook blocks final answers while
+  this state is active.
 - Codex worker: perform the actual planning, design, implementation, testing,
   review, or closure work inside the capability step.
 - SQLite/taskctl: persist jobs, tasks, runs, artifacts, reviews, and experience.
@@ -73,10 +78,17 @@ semantic role-boundary judgment:
 - `prototype`: prototype specifications, DOM/interaction contracts, behavior
   notes. No production UI code.
 - `assetgen`: local raster image assets only, generated through the built-in
-  `.claude/scripts/assetgen_exec.py` Codex backend, including game assets, web
-  visuals, video thumbnails/key art/overlays, icons, textures, sprites,
-  product renders, `asset_generation_brief`, and `local_asset_manifest`. No
-  SVG outputs or product code files.
+  `.claude/scripts/assetgen_exec.py` Codex backend. Before generation it must
+  run `.claude/scripts/prompt_template_mcp.py` to fast-check or install the
+  local `image-2-prompt` full-profile MCP under `.prompt-searcher`, retrieve
+  suitable prompt templates, and feed that template context into the image
+  model. The MCP version standard is documented in `VERSIONING.md`: compare the
+  installed git commit with the latest known commit and warn if the user may
+  need to upgrade; do not auto-upgrade during generation. Assetgen covers game
+  assets, web visuals, video thumbnails/key art/overlays, icons, textures,
+  sprites, product renders,
+  `asset_generation_brief`, and `local_asset_manifest`. No SVG outputs or
+  product code files.
 - `fullstack`: the only role that may create or modify product implementation
   code, including frontend, backend, database, scripts, and production HTML.
 - `tester`: verification reports, screenshots, and test files under test paths.
@@ -112,12 +124,29 @@ semantic role-boundary judgment:
   constraints, dimensions, and intended raster file paths; `assetgen` should
   create the generated files under a local project asset directory with
   `.claude/scripts/assetgen_exec.py` and record a `local_asset_manifest`.
-  Product pages should reference those local files only.
+  Assetgen must use `gpt-5.4-mini` for the bounded prompt-template adapter and
+  raster-generation prompt. Product pages should reference those local files
+  only.
 
 ## Completion Rules
 
 - A task is not successful just because Codex exits successfully. Required
   artifacts must exist and be recorded.
+- Do not stop after one failed or partial attempt. Record the attempt, inspect
+  logs/artifacts, search or try another viable route, and continue.
+- Before a final answer for production work, run exactly one focus transition:
+
+```bash
+python .claude/scripts/focus_guard.py complete --workspace "<workspace>" --evidence "<artifacts/tests/result>"
+```
+
+or, only after all viable routes have been tried:
+
+```bash
+python .claude/scripts/focus_guard.py exhausted --workspace "<workspace>" --evidence "<attempts, searches, blockers>"
+```
+
+The Stop hook blocks final answers until one of these states is recorded.
 - Before claiming completion, run or rely on the `capability` audit result. If
   needed, run:
 

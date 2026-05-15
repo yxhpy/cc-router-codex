@@ -26,6 +26,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import codex_exec
+import prompt_template_mcp
 
 
 RASTER_FORMATS = {"png", "jpg", "jpeg", "webp"}
@@ -166,12 +167,38 @@ def asset_prompt(prompt: str, asset_role: str) -> str:
     )
 
 
-def build_codex_prompt(prompt: str, images: Sequence[OutputImage], *, size: str, style: str, asset_role: str) -> str:
+def build_request_analysis(prompt: str, images: Sequence[OutputImage], *, size: str, style: str, asset_role: str) -> str:
+    targets = ", ".join(f"{image.path.name}:{image.format}" for image in images)
+    style_text = style.strip() if style and style.strip() else "derive visual style from the user request and retrieved templates"
+    return (
+        f"- Asset role: {asset_role or 'other'}.\n"
+        f"- Output count and formats: {len(images)} file(s), {targets}.\n"
+        f"- Target size: {size}.\n"
+        f"- Style source: {style_text}.\n"
+        f"- User intent summary: {prompt.strip()}"
+    )
+
+
+def build_codex_prompt(
+    prompt: str,
+    images: Sequence[OutputImage],
+    *,
+    size: str,
+    style: str,
+    asset_role: str,
+    template_context: str,
+) -> str:
     targets = "\n".join(f"{image.index}. {image.path} ({image.format})" for image in images)
     style_line = style.strip() if style and style.strip() else "Use the user request and asset role as the style source."
     return f"""You are a Codex image asset backend.
 
 Create exactly {len(images)} raster image file(s) for this asset request:
+
+Requirement analysis:
+{build_request_analysis(prompt, images, size=size, style=style, asset_role=asset_role)}
+
+Retrieved prompt-template context:
+{template_context}
 
 {asset_prompt(prompt, asset_role)}
 
@@ -180,6 +207,7 @@ Write the file(s) exactly here:
 
 Generation contract:
 - Use the available Codex image-generation capability or another Codex-controlled raster-writing method.
+- First adapt the retrieved prompt-template patterns into one concrete generation prompt for the requested asset.
 - Target size: {size}
 - Style guidance: {style_line}
 - Do not create SVG files or vector placeholders.
@@ -284,7 +312,16 @@ def run_codex(command: Sequence[str], prompt: str, *, timeout: int) -> subproces
     )
 
 
-def write_manifest(path: Path, workspace: Path, images: Sequence[OutputImage], *, prompt: str, size: str, style: str) -> None:
+def write_manifest(
+    path: Path,
+    workspace: Path,
+    images: Sequence[OutputImage],
+    *,
+    prompt: str,
+    size: str,
+    style: str,
+    prompt_template_mcp: Mapping[str, Any] | None = None,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "backend": "codex",
@@ -292,6 +329,7 @@ def write_manifest(path: Path, workspace: Path, images: Sequence[OutputImage], *
         "prompt": prompt,
         "size": size,
         "style": style,
+        "prompt_template_mcp": dict(prompt_template_mcp or {}),
         "images": [
             {
                 "index": image.index,
@@ -314,11 +352,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--asset-role", choices=sorted(ASSET_ROLES), default="other")
     parser.add_argument("--size", default="1024x1024")
     parser.add_argument("--style", default="")
-    parser.add_argument("--model", default=os.environ.get("CODEX_MODEL", ""))
+    parser.add_argument("--model", default=os.environ.get("ASSETGEN_CODEX_MODEL") or os.environ.get("CODEX_MODEL", "gpt-5.4-mini"))
     parser.add_argument("--reasoning-effort", default=os.environ.get("CODEX_REASONING_EFFORT", ""))
     parser.add_argument("--sandbox", default=os.environ.get("ASSETGEN_CODEX_SANDBOX", "workspace"))
     parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", ""))
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("ASSETGEN_CODEX_TIMEOUT", "900")))
+    parser.add_argument("--prompt-template-top", type=int, default=int(os.environ.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3")))
     return parser
 
 
@@ -333,6 +372,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.manifest
             else None
         )
+        prompt_context = prompt_template_mcp.build_asset_prompt_context(
+            workspace,
+            args.prompt,
+            asset_role=args.asset_role,
+            size=args.size,
+            style=args.style,
+            top=max(1, args.prompt_template_top),
+        )
+        prompt_metadata = prompt_context.get("metadata") if isinstance(prompt_context, Mapping) else {}
+        prompt_status = prompt_metadata.get("status") if isinstance(prompt_metadata, Mapping) else {}
+        prompt_version = prompt_status.get("version") if isinstance(prompt_status, Mapping) else {}
+        if isinstance(prompt_version, Mapping) and prompt_version.get("warning"):
+            print(f"WARNING: {prompt_version['warning']}", file=sys.stderr)
         for image in images:
             image.path.parent.mkdir(parents=True, exist_ok=True)
             if image.path.exists():
@@ -351,6 +403,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 size=args.size,
                 style=args.style,
                 asset_role=args.asset_role,
+                template_context=str(prompt_context.get("text") or ""),
             )
             command = build_command(
                 codex_bin=codex_bin,
@@ -371,8 +424,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 )
             verify_payload(parse_json_object(final_text), images, workspace)
         if manifest:
-            write_manifest(manifest, workspace, images, prompt=args.prompt, size=args.size, style=args.style)
-    except (AssetgenError, OSError, subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as exc:
+            write_manifest(
+                manifest,
+                workspace,
+                images,
+                prompt=args.prompt,
+                size=args.size,
+                style=args.style,
+                prompt_template_mcp=prompt_metadata if isinstance(prompt_metadata, Mapping) else {},
+            )
+    except (
+        AssetgenError,
+        prompt_template_mcp.PromptTemplateMcpError,
+        OSError,
+        subprocess.TimeoutExpired,
+        FileNotFoundError,
+        json.JSONDecodeError,
+    ) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 

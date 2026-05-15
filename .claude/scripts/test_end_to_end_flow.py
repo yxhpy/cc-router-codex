@@ -20,6 +20,7 @@ CODEX_EXEC = SCRIPTS / "codex_exec.py"
 HOOK = SCRIPTS / "hook_intercept_create.py"
 PROMPT_HOOK = SCRIPTS / "hook_user_prompt_submit.py"
 SKILL_VALIDATE = Path.home() / ".codex" / "skills" / ".system" / "skill-creator" / "scripts" / "quick_validate.py"
+FOCUS_STATE = ROOT / ".claude" / "task-plans" / "focus_state.json"
 GOAL = "帮我做一个单步能力测试页面"
 
 
@@ -108,6 +109,7 @@ class EndToEndFlowTests(unittest.TestCase):
         self.workspace = self.base / "workspace"
         self.workspace.mkdir()
         self.db = self.base / "taskctl.sqlite3"
+        self.addCleanup(lambda: FOCUS_STATE.unlink() if FOCUS_STATE.exists() else None)
 
     def test_prompt_to_single_step_audit_flow(self) -> None:
         code, prompt_hook = run_hook(PROMPT_HOOK, {"prompt": GOAL}, env=router_mock())
@@ -118,6 +120,7 @@ class EndToEndFlowTests(unittest.TestCase):
         self.assertNotIn("filter-input --role", prompt_context)
         self.assertNotIn("enqueue <job_id>", prompt_context)
         self.assertIn("Do not use fixed workflows", prompt_context)
+        self.assertIn("Hard focus rule", prompt_context)
 
         code, write_block = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": "direct.html"}})
         self.assertEqual(code, 2)

@@ -24,9 +24,20 @@ from typing import Callable, Iterable
 
 
 SOURCE_ROOT = Path(__file__).resolve().parent
-RUNTIME_DIR_NAMES = {"__pycache__", "artifacts", "task-plans", "logs"}
+RUNTIME_DIR_NAMES = {"__pycache__", "artifacts", "task-plans", "logs", ".prompt-searcher"}
 RUNTIME_FILE_NAMES = {".env", "settings.local.json", "ALLOW_CONTROL_PLANE_WRITES"}
 RUNTIME_SUFFIXES = {".pyc", ".pyo", ".sqlite", ".sqlite3", ".db", ".log", ".tmp", ".bak"}
+DEFAULT_BASH_ALLOW_RULES = (
+    "Bash(python *)",
+    "Bash(python3 *)",
+    "Bash(py *)",
+    "Bash(codex *)",
+    "Bash(codex.cmd *)",
+    "Bash(codex.exe *)",
+    # Kept for older Claude Code versions and existing installs.
+    "Bash(python:*)",
+    "Bash(codex:*)",
+)
 
 
 @dataclass(frozen=True)
@@ -49,11 +60,25 @@ def now_stamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def normalize_command_path(value: str | Path) -> str:
+    return str(value or "").strip().replace("\\", "/")
+
+
+def resolved_command_path(value: str | None) -> str:
+    if not value:
+        return ""
+    try:
+        return normalize_command_path(Path(value).resolve())
+    except OSError:
+        return normalize_command_path(value)
+
+
 def detect_system() -> Detection:
+    codex = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe") or ""
     return Detection(
         system=platform.system().lower() or "unknown",
-        python=str(Path(sys.executable).resolve()) if sys.executable else "python",
-        codex=shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe") or "",
+        python=resolved_command_path(sys.executable) if sys.executable else "python",
+        codex=resolved_command_path(codex),
     )
 
 
@@ -89,7 +114,7 @@ def ensure_target_directory(path: Path) -> Path:
 
 def conflicts_for(target: Path) -> list[Path]:
     conflicts: list[Path] = []
-    for name in (".claude", "CLAUDE.md"):
+    for name in (".claude", "CLAUDE.md", "VERSIONING.md"):
         path = target / name
         if path.exists():
             conflicts.append(path)
@@ -153,7 +178,16 @@ def render_env(source_root: Path, detection: Detection) -> str:
             "TASKCTL_ROUTER_CODEX_FALLBACK": "1",
             "TASKCTL_INPUT_GUARD_CODEX_FALLBACK": "1",
             "ASSETGEN_CODEX_SANDBOX": values.get("ASSETGEN_CODEX_SANDBOX", "workspace"),
+            "ASSETGEN_CODEX_MODEL": values.get("ASSETGEN_CODEX_MODEL", "gpt-5.4-mini"),
             "ASSETGEN_CODEX_TIMEOUT": values.get("ASSETGEN_CODEX_TIMEOUT", "900"),
+            "ASSETGEN_PROMPT_MCP_TARGET": values.get("ASSETGEN_PROMPT_MCP_TARGET", ".prompt-searcher"),
+            "ASSETGEN_PROMPT_MCP_REPO": values.get("ASSETGEN_PROMPT_MCP_REPO", "https://github.com/yxhpy/image-2-prompt"),
+            "ASSETGEN_PROMPT_MCP_REF": values.get("ASSETGEN_PROMPT_MCP_REF", "main"),
+            "ASSETGEN_PROMPT_MCP_TIMEOUT": values.get("ASSETGEN_PROMPT_MCP_TIMEOUT", "8"),
+            "ASSETGEN_PROMPT_MCP_INSTALL_TIMEOUT": values.get("ASSETGEN_PROMPT_MCP_INSTALL_TIMEOUT", "300"),
+            "ASSETGEN_PROMPT_MCP_VERSION_TIMEOUT": values.get("ASSETGEN_PROMPT_MCP_VERSION_TIMEOUT", "5"),
+            "ASSETGEN_PROMPT_MCP_LATEST_TTL_SECONDS": values.get("ASSETGEN_PROMPT_MCP_LATEST_TTL_SECONDS", "3600"),
+            "ASSETGEN_PROMPT_TEMPLATE_TOP": values.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3"),
         }
     )
     if detection.codex:
@@ -175,7 +209,16 @@ def render_env(source_root: Path, detection: Detection) -> str:
         "TASKCTL_INPUT_GUARD_CODEX_TIMEOUT",
         "TASKCTL_INPUT_GUARD_CODEX_FALLBACK",
         "ASSETGEN_CODEX_SANDBOX",
+        "ASSETGEN_CODEX_MODEL",
         "ASSETGEN_CODEX_TIMEOUT",
+        "ASSETGEN_PROMPT_MCP_TARGET",
+        "ASSETGEN_PROMPT_MCP_REPO",
+        "ASSETGEN_PROMPT_MCP_REF",
+        "ASSETGEN_PROMPT_MCP_TIMEOUT",
+        "ASSETGEN_PROMPT_MCP_INSTALL_TIMEOUT",
+        "ASSETGEN_PROMPT_MCP_VERSION_TIMEOUT",
+        "ASSETGEN_PROMPT_MCP_LATEST_TTL_SECONDS",
+        "ASSETGEN_PROMPT_TEMPLATE_TOP",
     ]
     ordered_keys = [key for key in preferred_order if key in values]
     ordered_keys.extend(sorted(key for key in values if key not in set(ordered_keys)))
@@ -201,14 +244,46 @@ def hook_command(python_cmd: str, script_name: str) -> str:
     return f"{command_arg(python_cmd)} .claude/scripts/{script_name}"
 
 
+def bash_allow_rule(command_prefix: str) -> str:
+    return f"Bash({command_arg(normalize_command_path(command_prefix))} *)"
+
+
+def install_bash_allow_rules(detection: Detection) -> tuple[str, ...]:
+    rules = list(DEFAULT_BASH_ALLOW_RULES)
+    for command in (detection.python, detection.codex):
+        if command:
+            rules.append(bash_allow_rule(command))
+    return tuple(dict.fromkeys(rules))
+
+
+def ensure_permission_allows(payload: dict[str, object], detection: Detection) -> None:
+    permissions = payload.get("permissions")
+    if not isinstance(permissions, dict):
+        permissions = {}
+        payload["permissions"] = permissions
+
+    allow = permissions.get("allow")
+    if not isinstance(allow, list):
+        allow = []
+        permissions["allow"] = allow
+
+    seen = {entry for entry in allow if isinstance(entry, str)}
+    for rule in install_bash_allow_rules(detection):
+        if rule not in seen:
+            allow.append(rule)
+            seen.add(rule)
+
+
 def rewrite_settings(settings_path: Path, detection: Detection) -> None:
     if not settings_path.exists():
         return
     payload = json.loads(settings_path.read_text(encoding="utf-8", errors="replace"))
+    ensure_permission_allows(payload, detection)
     replacements = {
         "hook_intercept_create.py": hook_command(detection.python, "hook_intercept_create.py"),
         "hook_user_prompt_submit.py": hook_command(detection.python, "hook_user_prompt_submit.py"),
         "hook_session_start.py": hook_command(detection.python, "hook_session_start.py"),
+        "hook_stop_focus.py": hook_command(detection.python, "hook_stop_focus.py"),
     }
     hooks = payload.get("hooks", {})
     if isinstance(hooks, dict):
@@ -243,18 +318,21 @@ def install_control_plane(
 
     source_claude = source / ".claude"
     source_claude_md = source / "CLAUDE.md"
+    source_versioning = source / "VERSIONING.md"
     if not source_claude.is_dir() or not source_claude_md.is_file():
         raise SystemExit(f"ERROR: source is missing .claude or CLAUDE.md: {source}")
 
     conflicts = conflicts_for(target)
     if conflicts and not yes and not confirm_overwrite(conflicts, input_func=input_func, output_func=output_func):
-        raise SystemExit("ABORTED: existing .claude or CLAUDE.md was not overwritten")
+        raise SystemExit("ABORTED: existing .claude, CLAUDE.md, or VERSIONING.md was not overwritten")
 
     for path in conflicts:
         safe_remove(path, target)
 
     shutil.copytree(source_claude, target / ".claude", ignore=copy_ignore)
     shutil.copy2(source_claude_md, target / "CLAUDE.md")
+    if source_versioning.is_file():
+        shutil.copy2(source_versioning, target / "VERSIONING.md")
     (target / ".claude" / "artifacts").mkdir(exist_ok=True)
     (target / ".claude" / "task-plans").mkdir(exist_ok=True)
 
@@ -264,7 +342,7 @@ def install_control_plane(
     settings_path = target / ".claude" / "settings.json"
     rewrite_settings(settings_path, detection)
 
-    copied = (".claude", "CLAUDE.md", ".claude/.env")
+    copied = (".claude", "CLAUDE.md", "VERSIONING.md", ".claude/.env") if source_versioning.is_file() else (".claude", "CLAUDE.md", ".claude/.env")
     return InstallResult(target=target, copied=copied, env_path=env_path, settings_path=settings_path, detection=detection)
 
 
