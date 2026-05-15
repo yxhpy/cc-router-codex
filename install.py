@@ -240,8 +240,8 @@ def command_arg(value: str) -> str:
     return text
 
 
-def hook_command(python_cmd: str, script_name: str) -> str:
-    return f"{command_arg(python_cmd)} .claude/scripts/{script_name}"
+def hook_command(python_cmd: str, script_path: str | Path) -> str:
+    return f"{command_arg(python_cmd)} {command_arg(normalize_command_path(script_path))}"
 
 
 def bash_allow_rule(command_prefix: str) -> str:
@@ -279,11 +279,12 @@ def rewrite_settings(settings_path: Path, detection: Detection) -> None:
         return
     payload = json.loads(settings_path.read_text(encoding="utf-8", errors="replace"))
     ensure_permission_allows(payload, detection)
+    scripts_dir = settings_path.parent / "scripts"
     replacements = {
-        "hook_intercept_create.py": hook_command(detection.python, "hook_intercept_create.py"),
-        "hook_user_prompt_submit.py": hook_command(detection.python, "hook_user_prompt_submit.py"),
-        "hook_session_start.py": hook_command(detection.python, "hook_session_start.py"),
-        "hook_stop_focus.py": hook_command(detection.python, "hook_stop_focus.py"),
+        "hook_intercept_create.py": hook_command(detection.python, scripts_dir / "hook_intercept_create.py"),
+        "hook_user_prompt_submit.py": hook_command(detection.python, scripts_dir / "hook_user_prompt_submit.py"),
+        "hook_session_start.py": hook_command(detection.python, scripts_dir / "hook_session_start.py"),
+        "hook_stop_focus.py": hook_command(detection.python, scripts_dir / "hook_stop_focus.py"),
     }
     hooks = payload.get("hooks", {})
     if isinstance(hooks, dict):

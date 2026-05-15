@@ -125,9 +125,15 @@ class InstallTests(unittest.TestCase):
 
             settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
             command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
-            self.assertEqual(command, "C:/Python/python.exe .claude/scripts/hook_session_start.py")
+            session_hook = installer.normalize_command_path(
+                target.resolve() / ".claude" / "scripts" / "hook_session_start.py"
+            )
+            self.assertEqual(command, f"C:/Python/python.exe {session_hook}")
             stop_command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
-            self.assertEqual(stop_command, "C:/Python/python.exe .claude/scripts/hook_stop_focus.py")
+            stop_hook = installer.normalize_command_path(
+                target.resolve() / ".claude" / "scripts" / "hook_stop_focus.py"
+            )
+            self.assertEqual(stop_command, f"C:/Python/python.exe {stop_hook}")
             allow = settings["permissions"]["allow"]
             self.assertIn("Bash(python *)", allow)
             self.assertIn("Bash(codex *)", allow)
@@ -151,7 +157,10 @@ class InstallTests(unittest.TestCase):
             settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
             command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
             allow = settings["permissions"]["allow"]
-            self.assertEqual(command, '"C:/Program Files/Python/python.exe" .claude/scripts/hook_session_start.py')
+            session_hook = installer.normalize_command_path(
+                target.resolve() / ".claude" / "scripts" / "hook_session_start.py"
+            )
+            self.assertEqual(command, f'"C:/Program Files/Python/python.exe" {session_hook}')
             self.assertIn('Bash("C:/Program Files/Python/python.exe" *)', allow)
             self.assertIn('Bash("C:/Program Files/node/codex.cmd" *)', allow)
 

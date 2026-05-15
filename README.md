@@ -2,7 +2,7 @@
 
 Claude/Codex control plane with taskctl routing, role boundaries, and Codex-only raster asset generation.
 
-Current release: `v0.1.0`.
+Current release: `v0.1.1`.
 
 Production prompts are also protected by a hard focus guard. `UserPromptSubmit`
 writes `.claude/task-plans/focus_state.json`; the `Stop` hook blocks final
