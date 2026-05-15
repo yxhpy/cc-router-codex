@@ -525,6 +525,55 @@ def mcp_smoke_test(target: Path) -> Mapping[str, Any]:
     }
 
 
+def full_payload_paths(target: Path) -> list[Path]:
+    return [
+        target / "data" / "search-docs.json",
+        target / "data" / "search-index.json",
+        target / "data" / "search-facets.json",
+        target / "src" / "prompt_searcher" / "mcp_server.py",
+        _venv_python(target),
+    ]
+
+
+def full_payload_present(target: Path) -> bool:
+    return all(path.is_file() for path in full_payload_paths(target))
+
+
+def write_recovered_install_record(
+    target: Path,
+    *,
+    source_root: Path,
+    python_executable: Path,
+    smoke: Mapping[str, Any],
+    recovered_from: str,
+) -> None:
+    smoke_payload = dict(smoke)
+    smoke_payload.setdefault("ok", True)
+    smoke_payload["recoveredFrom"] = compact_text(recovered_from, 1000)
+    record = {
+        "schemaVersion": 1,
+        "profile": "full",
+        "installedAt": utc_now(),
+        "offline": False,
+        "sourceRoot": str(source_root.expanduser().resolve()),
+        "target": str(target),
+        "python": str(python_executable),
+        "venv": str(target / ".venv"),
+        "dataDir": str(target / "data"),
+        "codeFiles": [],
+        "dataFiles": [],
+        "supportFiles": [],
+        "launchers": {
+            "posix": str(target / "bin" / "prompt-search"),
+            "powershell": str(target / "bin" / "prompt-search.ps1"),
+            "mcp": str(target / "bin" / "prompt-search-mcp"),
+            "api": str(target / "bin" / "prompt-search-api"),
+        },
+        "smokeTest": smoke_payload,
+    }
+    (target / "install.json").write_text(json.dumps(record, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def write_ready_marker(target: Path, smoke: Mapping[str, Any], version: PromptMcpVersion | None = None) -> None:
     fingerprint = install_fingerprint(target)
     if fingerprint is None:
@@ -613,10 +662,23 @@ def install_prompt_mcp(
             check=False,
         )
         if install.returncode != 0:
-            raise PromptTemplateMcpError(
-                "image-2-prompt install failed: %s"
-                % (install.stderr.strip() or install.stdout.strip()[-2000:])
-            )
+            install_error = install.stderr.strip() or install.stdout.strip()[-2000:]
+            recovered = False
+            if full_payload_present(resolved):
+                try:
+                    smoke = mcp_smoke_test(resolved)
+                    write_recovered_install_record(
+                        resolved,
+                        source_root=source,
+                        python_executable=_venv_python(resolved),
+                        smoke=smoke,
+                        recovered_from=install_error,
+                    )
+                    recovered = True
+                except (OSError, subprocess.SubprocessError, PromptTemplateMcpError) as exc:
+                    install_error = f"{install_error}; recovery smoke failed: {exc}"
+            if not recovered:
+                raise PromptTemplateMcpError(f"image-2-prompt install failed: {install_error}")
     write_version_file(resolved, repo=repo_url, ref=repo_ref, installed_commit=installed_commit, latest_commit=installed_commit)
     write_latest_cache(resolved, repo=repo_url, ref=repo_ref, latest_commit=installed_commit, source="install")
     return {"target": str(resolved), "repo": repo_url, "ref": repo_ref, "installed_commit": installed_commit}

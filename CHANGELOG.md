@@ -6,6 +6,18 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.6 - 2026-05-16
+
+- Fixed macOS global installs so PreToolUse allows versioned absolute Python
+  executables such as `/Library/.../python3.13` when running installed
+  control-plane scripts.
+- Recovered prompt-template MCP installs when `image-2-prompt` completes the
+  full payload install but its PowerShell launcher smoke fails on macOS.
+- Changed worker artifact and experience command hints to use the current
+  platform shell syntax instead of always showing PowerShell examples.
+- Added regression coverage for the macOS absolute Python, MCP install
+  recovery, and platform-specific worker command hints.
+
 ## 0.1.5 - 2026-05-16
 
 - Changed worker-facing taskctl and focus_guard instructions to use the

@@ -25,7 +25,20 @@ SAFE_SCRIPT_NAMES = (
     "hook_",
 )
 
-PYTHON_CMD = r'(?:"[^"]*(?:python|python3|py)(?:\.exe)?"|\S*(?:python|python3|py)(?:\.exe)?|py|python|python3)'
+PYTHON_EXE_NAME = r"(?:python(?:\d+(?:\.\d+)*)?|py)(?:\.exe)?"
+PYTHON_CMD = (
+    r'(?:"[^"]*[\\/]' + PYTHON_EXE_NAME + r'"|"'
+    + PYTHON_EXE_NAME
+    + r'"|\'[^\']*[\\/]'
+    + PYTHON_EXE_NAME
+    + r"\'|\'"
+    + PYTHON_EXE_NAME
+    + r"\'|\S*[\\/]"
+    + PYTHON_EXE_NAME
+    + r"|"
+    + PYTHON_EXE_NAME
+    + r")"
+)
 
 SAFE_BASH_CMDS = [
     # Control-plane tooling. File writes inside these scripts are policy-owned.

@@ -316,7 +316,14 @@ def normalize_tags(values: Iterable[str] | None) -> list[str]:
     return tags
 
 
+def task_id_shell_reference() -> tuple[str, str]:
+    if os.name == "nt":
+        return "PowerShell", "$env:TASKCTL_TASK_ID"
+    return "Shell", "$TASKCTL_TASK_ID"
+
+
 def experience_footer() -> str:
+    shell_label, task_id_ref = task_id_shell_reference()
     return f"""
 
 {EXPERIENCE_FOOTER_MARKER}
@@ -325,7 +332,7 @@ Record only specific, evidence-backed lessons that can help future tasks. Do
 not record generic advice, secrets, credentials, or noisy observations.
 
 If useful, add one or more candidate lessons:
-{script_command('taskctl.py')} experience-add --task-id $env:TASKCTL_TASK_ID --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact, file, command, or failure that proved it" --reuse "When and how to reuse it" --tag workflow --tag area
+{shell_label}: {script_command('taskctl.py')} experience-add --task-id {task_id_ref} --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact, file, command, or failure that proved it" --reuse "When and how to reuse it" --tag workflow --tag area
 
 Use kind values such as pattern, pitfall, script, skill_fix, quality_rule,
 tooling, architecture, frontend, or testing. Keep each lesson concise. If no
@@ -439,6 +446,7 @@ def artifact_contract_footer(required_artifacts: Iterable[str] | None) -> str:
     specs = [(kind, path) for kind, path in (artifact_spec_parts(str(item)) for item in (required_artifacts or [])) if kind]
     if not specs:
         return ""
+    shell_label, task_id_ref = task_id_shell_reference()
     lines = [
         "",
         "[TASKCTL REQUIRED ARTIFACTS]",
@@ -449,12 +457,12 @@ def artifact_contract_footer(required_artifacts: Iterable[str] | None) -> str:
         if path:
             lines.append(f"- {kind}: {path}")
             lines.append(
-                f'  PowerShell: {script_command("taskctl.py")} artifact $env:TASKCTL_TASK_ID --kind {kind} --path "{path}" --summary "{kind} artifact"'
+                f'  {shell_label}: {script_command("taskctl.py")} artifact {task_id_ref} --kind {kind} --path "{path}" --summary "{kind} artifact"'
             )
         else:
             lines.append(f"- {kind}: choose the correct produced file path and record it")
             lines.append(
-                f'  PowerShell: {script_command("taskctl.py")} artifact $env:TASKCTL_TASK_ID --kind {kind} --path "<path>" --summary "{kind} artifact"'
+                f'  {shell_label}: {script_command("taskctl.py")} artifact {task_id_ref} --kind {kind} --path "<path>" --summary "{kind} artifact"'
             )
     return "\n".join(lines) + "\n"
 

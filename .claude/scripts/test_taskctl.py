@@ -157,6 +157,17 @@ class TaskCtlTests(unittest.TestCase):
         self.assertNotIn("python .claude/scripts/taskctl.py artifact", row["prompt"])
         self.assertNotIn("python .claude/scripts/taskctl.py experience-add", row["prompt"])
 
+    def test_artifact_footer_uses_current_platform_shell_syntax(self) -> None:
+        footer = taskctl.artifact_contract_footer(["image:assets/generated/hero.png"])
+
+        if os.name == "nt":
+            self.assertIn("$env:TASKCTL_TASK_ID", footer)
+            self.assertIn("PowerShell:", footer)
+        else:
+            self.assertIn("$TASKCTL_TASK_ID", footer)
+            self.assertNotIn("$env:TASKCTL_TASK_ID", footer)
+            self.assertNotIn("PowerShell:", footer)
+
     def test_assetgen_role_is_accepted_and_scoped_to_image_assets(self) -> None:
         job_id = self.submit_job()
         output = self.run_cli(
