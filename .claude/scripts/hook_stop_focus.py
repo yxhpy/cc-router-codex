@@ -48,14 +48,8 @@ def main() -> int:
                 "continue": False,
                 "stopReason": decision.reason,
                 "reason": decision.reason,
-                "hookSpecificOutput": {
-                    "hookEventName": "Stop",
-                    "permissionDecision": "deny",
-                    "permissionDecisionReason": decision.reason,
-                },
                 "systemMessage": decision.reason,
-            },
-            ensure_ascii=False,
+            }
         )
     )
     return 2

@@ -294,7 +294,11 @@ class HookTests(unittest.TestCase):
         blocked_code, blocked = run_hook(STOP_HOOK, {"cwd": str(ROOT)})
         self.assertEqual(blocked_code, 2)
         self.assertEqual(blocked["decision"], "block")
+        self.assertFalse(blocked["continue"])
         self.assertIn("FOCUS_GUARD_BLOCK", blocked["reason"])
+        self.assertIn("FOCUS_GUARD_BLOCK", blocked["stopReason"])
+        self.assertIn("FOCUS_GUARD_BLOCK", blocked["systemMessage"])
+        self.assertNotIn("hookSpecificOutput", blocked)
 
         result = subprocess.run(
             [

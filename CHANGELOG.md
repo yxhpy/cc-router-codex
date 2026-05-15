@@ -4,7 +4,18 @@ All notable changes to `cc-router-codex` are tracked here.
 
 ## Unreleased
 
-- Refresh repository presentation with structured README, architecture docs,
+- No changes yet.
+
+## 0.1.2 - 2026-05-15
+
+- Fixed Stop hook JSON output so blocking responses use only Claude-supported
+  top-level fields.
+- Removed unsupported `hookSpecificOutput` from Stop hook responses.
+- Made Stop hook blocking output ASCII-safe to avoid mojibake in Windows hook
+  transport.
+- Normalized asset-generation workspace paths before containment checks so
+  Windows runners report the intended raster-file validation errors.
+- Refreshed repository presentation with structured README, architecture docs,
   operations docs, contribution guide, issue templates, and CI metadata.
 
 ## 0.1.1 - 2026-05-15

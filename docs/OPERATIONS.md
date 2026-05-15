@@ -93,6 +93,7 @@ python .claude\scripts\prompt_template_mcp.py ensure --workspace . --refresh-ver
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
+| `Stop hook error: Hook JSON output validation failed` | Stop hook returned fields that Claude only accepts for other hook types | Reinstall with `v0.1.2` or newer, or update `.claude/scripts/hook_stop_focus.py`. |
 | Hook tries to open `.claude/scripts/...` in the current project and fails | Hook command was generated with a relative script path | Reinstall with `v0.1.1` or newer so hooks use absolute installed script paths. |
 | Claude final answer is blocked by `FOCUS_GUARD_BLOCK` | Active goal is not marked complete or exhausted | Run `focus_guard.py complete` with evidence, or `exhausted` after all viable attempts. |
 | Image generation feels slow on the first run | `image-2-prompt` MCP is being installed and smoke-tested | Let the first install finish; later checks use cached readiness. |

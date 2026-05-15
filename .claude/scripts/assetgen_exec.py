@@ -75,12 +75,13 @@ def resolve_workspace(value: str) -> Path:
 def resolve_inside_workspace(workspace: Path, value: str, *, label: str) -> Path:
     if not value or not str(value).strip():
         raise AssetgenError(f"{label} path is required")
+    root = workspace.expanduser().resolve()
     path = Path(value).expanduser()
     if not path.is_absolute():
-        path = workspace / path
+        path = root / path
     resolved = path.resolve()
     try:
-        resolved.relative_to(workspace)
+        resolved.relative_to(root)
     except ValueError as exc:
         raise AssetgenError(f"{label} path escapes workspace: {value}") from exc
     return resolved
