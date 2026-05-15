@@ -15,7 +15,7 @@ import llm_router
 import focus_guard
 import route_cache
 from hook_context import target_workspace
-from project_paths import python_command, script_path
+from project_paths import script_command
 
 
 def read_hook_json() -> dict[str, object]:
@@ -53,7 +53,7 @@ def artifact_args(artifacts: list[str]) -> str:
 def suggested_command(route: llm_router.Route, prompt: str, workspace: str, route_token: str = "") -> str:
     token_arg = f"--route-token {ps_quote(route_token)} " if route_token else ""
     return (
-        f"{python_command()} {ps_quote(str(script_path('taskctl.py')))} capability "
+        f"{script_command('taskctl.py')} capability "
         f"--role {route.role} "
         f"--title {ps_quote(route.title)} "
         f"--prompt {ps_quote(route.worker_prompt)} "
@@ -117,8 +117,8 @@ returns or fails.
 Hard focus rule: this goal is now active in `.claude/task-plans/focus_state.json`.
 You are not allowed to stop while it is active. The Stop hook will block final
 answers until one of these explicit state transitions is recorded:
-- Success: `python .claude/scripts/focus_guard.py complete --workspace {ps_quote(workspace)} --evidence "<created artifacts, tests, and result>"`
-- Exhausted: `python .claude/scripts/focus_guard.py exhausted --workspace {ps_quote(workspace)} --evidence "<all attempted routes, searches, blockers, and why no route remains>"`
+- Success: `{script_command('focus_guard.py')} complete --workspace {ps_quote(workspace)} --evidence "<created artifacts, tests, and result>"`
+- Exhausted: `{script_command('focus_guard.py')} exhausted --workspace {ps_quote(workspace)} --evidence "<all attempted routes, searches, blockers, and why no route remains>"`
 If a capability fails or only partially works, record the attempt with
 `focus_guard.py attempt`, inspect logs/artifacts, search or try another viable
 route, and continue. Do not ask the user for direction until all viable routes

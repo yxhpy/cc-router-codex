@@ -6,6 +6,16 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.5 - 2026-05-16
+
+- Changed worker-facing taskctl and focus_guard instructions to use the
+  installed script path instead of target-project relative `.claude/scripts`
+  paths.
+- Added regression coverage for global installs where the target workspace has
+  task state but no local control-plane scripts.
+- Updated Claude CLI smoke guidance to exercise the same installed command path
+  that hooks inject into production prompts.
+
 ## 0.1.4 - 2026-05-15
 
 - Made the end-to-end test runner force UTF-8 subprocess I/O so Windows GitHub

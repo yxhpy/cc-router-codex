@@ -26,10 +26,14 @@ These rules apply even when no skill is explicitly invoked.
   assetgen -> fullstack -> tester`, but this is advisory, not a fixed workflow. The
   controller runs only one `capability` at a time, inspects the result, then
   decides whether to run, skip, or revise the next capability.
-- For production work, use exactly one atomic capability command:
+- For production work, use exactly one atomic capability command. Use the
+  installed `taskctl.py` command shown by the hook/session context; when this
+  control plane is installed globally, that command is an absolute Python plus
+  absolute script path. Do not substitute a target-project
+  `.claude/scripts/taskctl.py` path unless that file actually exists.
 
 ```bash
-python .claude/scripts/taskctl.py capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<user goal>"
+<installed-taskctl-command> capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<user goal>"
 ```
 
 - `capability` validates the worker prompt, stores one SQLite job/task, runs one
@@ -137,13 +141,13 @@ semantic role-boundary judgment:
 - Before a final answer for production work, run exactly one focus transition:
 
 ```bash
-python .claude/scripts/focus_guard.py complete --workspace "<workspace>" --evidence "<artifacts/tests/result>"
+<installed-focus-guard-command> complete --workspace "<workspace>" --evidence "<artifacts/tests/result>"
 ```
 
 or, only after all viable routes have been tried:
 
 ```bash
-python .claude/scripts/focus_guard.py exhausted --workspace "<workspace>" --evidence "<attempts, searches, blockers>"
+<installed-focus-guard-command> exhausted --workspace "<workspace>" --evidence "<attempts, searches, blockers>"
 ```
 
 The Stop hook blocks final answers until one of these states is recorded.
@@ -151,7 +155,7 @@ The Stop hook blocks final answers until one of these states is recorded.
   needed, run:
 
 ```bash
-python .claude/scripts/taskctl.py audit <job_id>
+<installed-taskctl-command> audit <job_id>
 ```
 
 - Recover stuck workers only through `retry-task` or `cancel-job`; do not edit

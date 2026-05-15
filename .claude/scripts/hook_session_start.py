@@ -13,14 +13,15 @@ if str(SCRIPT_DIR) not in sys.path:
 CLAUDE_DIR = SCRIPT_DIR.parent
 
 from claude_write_policy import CONTROL_PLANE_WRITE_MARKER, marker_expiry, marker_state
+from project_paths import script_command
 
-BASE_RULES = """## Codex Task Control Rules
+BASE_RULES = f"""## Codex Task Control Rules
 
 These rules are mandatory. They do not depend on explicit skill invocation.
 
 1. ds v4 is the control plane only: choose exactly one bounded capability input at a time, inspect state, and decide whether to continue, stop, or ask the user.
 2. Do not implement, test, review, or close work directly in ds context.
-3. All production work must be represented in SQLite through `python .claude/scripts/taskctl.py`.
+3. All production work must be represented in SQLite through `{script_command('taskctl.py')}`.
 4. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns. Generated commands must pass the repository root as `--workspace`.
 5. Codex workers own planning, divergence, requirements, prototype, UI/UX, asset generation, full-stack implementation, tests, review, and closure.
 6. LLM routing may suggest a role composition, but it is advisory only. Execute one capability, inspect the result, then choose the next capability; do not enqueue the whole composition.

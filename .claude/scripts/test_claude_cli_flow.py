@@ -12,6 +12,8 @@ from pathlib import Path
 import shutil
 import subprocess
 
+from project_paths import script_command
+
 
 ROOT = Path(__file__).resolve().parents[2]
 ARTIFACT_DIR = ROOT / ".claude" / "artifacts"
@@ -183,6 +185,7 @@ def check_write_block() -> None:
 
 
 def check_taskctl_dry_run_via_bash() -> None:
+    command = f"{script_command('taskctl.py')} run-next 7 --dry-run"
     events = run_claude(
         "run-next-dry-run",
         base_claude_args(
@@ -193,7 +196,7 @@ def check_taskctl_dry_run_via_bash() -> None:
             "--max-budget-usd",
             "0.30",
             "--system-prompt",
-            "You are a CLI integration test harness. Use Bash exactly once to run: python -B .claude/scripts/taskctl.py run-next 7 --dry-run. Then summarize whether the output mentions task_id or no ready task. Do not edit files.",
+            f"You are a CLI integration test harness. Use Bash exactly once to run: {command}. Then summarize whether the output mentions task_id or no ready task. Do not edit files.",
             "Run the taskctl dry-run command now.",
         ),
         timeout=360,

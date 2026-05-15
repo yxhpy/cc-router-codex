@@ -15,6 +15,8 @@ from pathlib import Path
 import sys
 from typing import Any, Mapping, Sequence
 
+from project_paths import script_command
+
 
 STATE_RELATIVE = Path(".claude") / "task-plans" / "focus_state.json"
 COMPLETED_STATUSES = {"complete", "exhausted"}
@@ -163,9 +165,9 @@ def stop_decision(workspace: str | Path) -> StopDecision:
         "record the attempt, inspect logs/artifacts, search or try another viable route, "
         "and continue.\n"
         "Only after reaching the requested result may you run:\n"
-        f'python .claude/scripts/focus_guard.py complete --workspace "{resolve_workspace(workspace)}" --evidence "<artifacts/tests/result>"\n'
+        f'{script_command("focus_guard.py")} complete --workspace "{resolve_workspace(workspace)}" --evidence "<artifacts/tests/result>"\n'
         "Only if all viable approaches have been exhausted may you run:\n"
-        f'python .claude/scripts/focus_guard.py exhausted --workspace "{resolve_workspace(workspace)}" --evidence "<attempts and blockers>"'
+        f'{script_command("focus_guard.py")} exhausted --workspace "{resolve_workspace(workspace)}" --evidence "<attempts and blockers>"'
     )
     return StopDecision(False, reason, payload)
 

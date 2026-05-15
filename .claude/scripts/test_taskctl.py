@@ -153,6 +153,9 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn(".claude/design-references", row["prompt"])
         self.assertIn("asset_generation_brief", row["prompt"])
         self.assertIn("local_asset_manifest", row["prompt"])
+        self.assertIn(str(taskctl.SCRIPT_DIR / "taskctl.py").replace("\\", "/"), row["prompt"])
+        self.assertNotIn("python .claude/scripts/taskctl.py artifact", row["prompt"])
+        self.assertNotIn("python .claude/scripts/taskctl.py experience-add", row["prompt"])
 
     def test_assetgen_role_is_accepted_and_scoped_to_image_assets(self) -> None:
         job_id = self.submit_job()
@@ -228,6 +231,8 @@ class TaskCtlTests(unittest.TestCase):
         def fake_run(cmd, **kwargs):
             self.assertIn("html: sample-page.html", cmd[-1])
             self.assertIn("--path \"sample-page.html\"", cmd[-1])
+            self.assertIn(str(taskctl.SCRIPT_DIR / "taskctl.py").replace("\\", "/"), cmd[-1])
+            self.assertNotIn("python .claude/scripts/taskctl.py", cmd[-1])
             self.assertEqual(Path(kwargs["cwd"]).resolve(), Path(self.workspace).resolve())
             Path(self.workspace, "sample-page.html").write_text("<html>ok</html>", encoding="utf-8")
             return mock.Mock(returncode=0, stdout=f"SUCCESS\nLOG: {log_path}\n", stderr="")

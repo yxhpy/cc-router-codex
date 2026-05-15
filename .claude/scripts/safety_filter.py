@@ -15,6 +15,8 @@ import json
 import sys
 from dataclasses import dataclass, field
 
+from project_paths import script_command
+
 
 INSTANT_BLOCK = (
     "jailbreak",
@@ -172,13 +174,13 @@ def print_rules() -> None:
     for term in HIGH_RISK:
         print(f"  - {term}")
     print("\nLegacy decomposition is disabled.")
-    print('Use: python .claude/scripts/taskctl.py capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<goal>"')
+    print(f'Use: {script_command("taskctl.py")} capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<goal>"')
 
 
 def disabled_decomposition() -> None:
     print("ERROR: legacy local decomposition is disabled.")
     print("Use the SQLite control plane instead:")
-    print('  python .claude/scripts/taskctl.py capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<goal>"')
+    print(f'  {script_command("taskctl.py")} capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<workspace>" --goal "<goal>"')
     raise SystemExit(2)
 
 

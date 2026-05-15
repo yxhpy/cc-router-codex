@@ -42,7 +42,7 @@ from pathlib import Path
 _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
-from project_paths import REPO_ROOT
+from project_paths import REPO_ROOT, script_command
 from safety_filter import check_prompt as _safety_check
 
 
@@ -336,7 +336,7 @@ def main():
                     print(f"  → {s}")
             print()
             print("Use --skip-safety to bypass (NOT recommended)")
-            print("Or submit the goal through: python .claude/scripts/taskctl.py submit \"<goal>\"")
+            print(f"Or submit the goal through: {script_command('taskctl.py')} submit-auto \"<goal>\"")
             sys.exit(2)
         # Warn on high risk but still pass
         if safety_result.risk_score >= 40:

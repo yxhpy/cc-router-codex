@@ -72,3 +72,7 @@ def command_arg(value: str) -> str:
 def python_command() -> str:
     value = os.environ.get("TASKCTL_PYTHON") or parse_env_file().get("TASKCTL_PYTHON") or "python"
     return command_arg(value)
+
+
+def script_command(name: str) -> str:
+    return f"{python_command()} {command_arg(display_path(script_path(name)))}"

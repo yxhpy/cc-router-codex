@@ -8,8 +8,11 @@ skill invocation.
    escalation.
 2. ds v4 must not implement, test, review, or close production work directly in
    its own context.
-3. All production work must be represented in SQLite through
-   `python .claude/scripts/taskctl.py`.
+3. All production work must be represented in SQLite through the installed
+   `taskctl.py` command injected by the hooks/session context. For global
+   installs this is an absolute Python plus absolute script path; do not
+   substitute a target-project `.claude/scripts/taskctl.py` unless that file
+   actually exists.
    Capability commands must pass the Claude session's target project directory
    as `--workspace`; scripts must resolve control-plane paths from `__file__`,
    not from the caller's shell CWD.

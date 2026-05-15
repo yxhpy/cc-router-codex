@@ -20,6 +20,10 @@ MAINTENANCE_MARKER = ROOT / ".claude" / "ALLOW_CONTROL_PLANE_WRITES"
 FOCUS_STATE = ROOT / ".claude" / "task-plans" / "focus_state.json"
 
 
+def display_path(path: Path) -> str:
+    return str(path.resolve()).replace("\\", "/")
+
+
 def run_hook(path: Path, payload: dict[str, object], env: dict[str, str] | None = None) -> tuple[int, dict[str, object]]:
     merged_env = os.environ.copy()
     if env:
@@ -272,6 +276,8 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 0)
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("taskctl.py capability", context)
+        self.assertIn(display_path(ROOT / ".claude" / "scripts" / "taskctl.py"), context)
+        self.assertIn(display_path(ROOT / ".claude" / "scripts" / "focus_guard.py"), context)
         self.assertIn("Router source: mock", context)
         self.assertIn('--artifact "html:sample-page.html"', context)
         self.assertIn("--route-token", context)
@@ -280,6 +286,8 @@ class HookTests(unittest.TestCase):
         focus = json.loads(FOCUS_STATE.read_text(encoding="utf-8"))
         self.assertEqual(focus["status"], "active")
         self.assertEqual(focus["route"]["role"], "fullstack")
+        self.assertNotIn("python .claude/scripts/taskctl.py capability", context)
+        self.assertNotIn("python .claude/scripts/focus_guard.py", context)
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
@@ -298,6 +306,8 @@ class HookTests(unittest.TestCase):
         self.assertIn("FOCUS_GUARD_BLOCK", blocked["reason"])
         self.assertIn("FOCUS_GUARD_BLOCK", blocked["stopReason"])
         self.assertIn("FOCUS_GUARD_BLOCK", blocked["systemMessage"])
+        self.assertIn(display_path(ROOT / ".claude" / "scripts" / "focus_guard.py"), blocked["reason"])
+        self.assertNotIn("python .claude/scripts/focus_guard.py", blocked["reason"])
         self.assertNotIn("hookSpecificOutput", blocked)
 
         result = subprocess.run(

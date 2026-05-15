@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import model_policy
-from project_paths import REPO_ROOT, python_command
+from project_paths import REPO_ROOT, script_command
 import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
 import worker_runner
@@ -325,7 +325,7 @@ Record only specific, evidence-backed lessons that can help future tasks. Do
 not record generic advice, secrets, credentials, or noisy observations.
 
 If useful, add one or more candidate lessons:
-python .claude/scripts/taskctl.py experience-add --task-id $env:TASKCTL_TASK_ID --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact, file, command, or failure that proved it" --reuse "When and how to reuse it" --tag workflow --tag area
+{script_command('taskctl.py')} experience-add --task-id $env:TASKCTL_TASK_ID --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact, file, command, or failure that proved it" --reuse "When and how to reuse it" --tag workflow --tag area
 
 Use kind values such as pattern, pitfall, script, skill_fix, quality_rule,
 tooling, architecture, frontend, or testing. Keep each lesson concise. If no
@@ -449,12 +449,12 @@ def artifact_contract_footer(required_artifacts: Iterable[str] | None) -> str:
         if path:
             lines.append(f"- {kind}: {path}")
             lines.append(
-                f'  PowerShell: {python_command()} .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "{path}" --summary "{kind} artifact"'
+                f'  PowerShell: {script_command("taskctl.py")} artifact $env:TASKCTL_TASK_ID --kind {kind} --path "{path}" --summary "{kind} artifact"'
             )
         else:
             lines.append(f"- {kind}: choose the correct produced file path and record it")
             lines.append(
-                f'  PowerShell: {python_command()} .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "<path>" --summary "{kind} artifact"'
+                f'  PowerShell: {script_command("taskctl.py")} artifact $env:TASKCTL_TASK_ID --kind {kind} --path "<path>" --summary "{kind} artifact"'
             )
     return "\n".join(lines) + "\n"
 
@@ -578,7 +578,7 @@ def submit_atomic_job(args: argparse.Namespace) -> None:
     else:
         print(f"JOB {job_id} {job['status']} [{ATOMIC_WORKFLOW}]")
         print(f"DB: {db_path(args.db)}")
-        print("DEBUG ONLY: normal production should use python .claude/scripts/taskctl.py capability ...")
+        print(f"DEBUG ONLY: normal production should use {script_command('taskctl.py')} capability ...")
 
 
 
@@ -1661,7 +1661,7 @@ Use this skill as a retrieval entrypoint, not as a rulebook.
 1. Search SQLite first:
 
 ```bash
-python .claude/scripts/taskctl.py experience-list --query "<term>" --status accepted --json
+{script_command('taskctl.py')} experience-list --query "<term>" --status accepted --json
 ```
 
 2. If SQLite is unavailable or you need a compact offline index, read
