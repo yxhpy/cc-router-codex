@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible control-plane, installer, hook, or asset-generation issue.
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What failed, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, Claude Code version, Codex CLI version, and install target.
+      placeholder: |
+        OS:
+        Python:
+        Claude Code:
+        Codex:
+        Target path:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Exact commands or Claude prompt that reproduced the issue.
+      render: powershell
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant output
+      description: Paste sanitized hook output, test output, or artifact paths. Do not include API tokens.
+      render: text
