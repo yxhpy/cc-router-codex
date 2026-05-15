@@ -66,7 +66,7 @@ target project.
 Allowed direct Claude writes are limited to runtime state under .claude/artifacts
 and .claude/task-plans. Control-plane source/config writes need explicit
 maintenance mode. Product code must be written by a Codex worker through
-taskctl, normally using role fullstack.
+taskctl, normally using role fullstack; image-only assets should use assetgen.
 """
 
 

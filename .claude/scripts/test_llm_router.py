@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the OpenAI SDK-backed LLM router."""
+"""Unit tests for the LLM-backed router."""
 
 from __future__ import annotations
 
@@ -21,27 +21,44 @@ class LlmRouterTests(unittest.TestCase):
                 "role": "fullstack",
                 "title": "Create page",
                 "worker_prompt": "Create the requested page and stop.",
-                "artifacts": [{"type": "file", "filename": "taobao.html"}],
+                "artifacts": [{"type": "file", "filename": "sample-page.html"}],
                 "reason": "page target",
                 "confidence": 0.9,
             },
-            "taobao.html",
+            "sample-page.html",
         )
 
-        self.assertEqual(route.artifacts, ["html:taobao.html"])
+        self.assertEqual(route.artifacts, ["html:sample-page.html"])
+
+    def test_normalizes_image_targets_for_assetgen_role(self) -> None:
+        route = llm_router.route_from_payload(
+            {
+                "production_work": True,
+                "role": "assetgen",
+                "title": "Generate game sprite",
+                "worker_prompt": "Generate a game sprite image and record the image artifact.",
+                "artifacts": [{"type": "file", "filename": "assets/generated/crystal-sword.png"}],
+                "reason": "standalone image asset request",
+                "confidence": 0.9,
+            },
+            "Generate a game asset sprite.",
+        )
+
+        self.assertEqual(route.role, "assetgen")
+        self.assertEqual(route.artifacts, ["image:assets/generated/crystal-sword.png"])
 
     def test_uses_first_suggested_step_as_next_capability(self) -> None:
         route = llm_router.route_from_payload(
             {
                 "production_work": True,
                 "role": "fullstack",
-                "title": "Create Taobao page",
-                "worker_prompt": "Create taobao.html directly.",
-                "artifacts": ["html:taobao.html"],
+                "title": "Create sample page",
+                "worker_prompt": "Create sample-page.html directly.",
+                "artifacts": ["html:sample-page.html"],
                 "steps": [
                     {
                         "role": "uiux",
-                        "title": "Select Taobao design reference",
+                        "title": "Select sample page design reference",
                         "worker_prompt": "Use project design sources or .claude/design-references and record the style contract.",
                         "artifacts": [
                             "design_reference_selection:.claude/artifacts/design_reference_selection.md",
@@ -51,22 +68,25 @@ class LlmRouterTests(unittest.TestCase):
                     },
                     {
                         "role": "fullstack",
-                        "title": "Implement Taobao page",
-                        "worker_prompt": "Implement taobao.html from the style contract.",
-                        "artifacts": ["html:taobao.html"],
+                        "title": "Implement sample page",
+                        "worker_prompt": "Implement sample-page.html from the style contract.",
+                        "artifacts": ["html:sample-page.html"],
                     },
                 ],
                 "reason": "frontend visual work needs design source first",
                 "confidence": 0.9,
             },
-            "模仿淘宝app首页，使用h5即可，taobao.html",
+            "Create a sample listing page and save it as sample-page.html.",
         )
 
         self.assertEqual(route.role, "uiux")
-        self.assertEqual(route.artifacts, [
-            "design_reference_selection:.claude/artifacts/design_reference_selection.md",
-            "style_contract:.claude/artifacts/style_contract.md",
-        ])
+        self.assertEqual(
+            route.artifacts,
+            [
+                "design_reference_selection:.claude/artifacts/design_reference_selection.md",
+                "style_contract:.claude/artifacts/style_contract.md",
+            ],
+        )
         self.assertEqual([step.role for step in route.steps], ["uiux", "fullstack"])
 
     def test_loads_project_env_without_overwriting_process_env(self) -> None:
@@ -101,7 +121,7 @@ class LlmRouterTests(unittest.TestCase):
             "confidence": 0.8,
         }
         with mock.patch.dict(os.environ, {"TASKCTL_ROUTER_MOCK_JSON": json.dumps(payload)}, clear=False):
-            route = llm_router.route_prompt("测试登录流程")
+            route = llm_router.route_prompt("Verify the current project flow.")
 
         self.assertEqual(route.source, "mock")
         self.assertEqual(route.role, "tester")
@@ -126,7 +146,7 @@ class LlmRouterTests(unittest.TestCase):
             ),
             mock.patch.object(llm_router, "call_codex_json", return_value=payload) as codex_call,
         ):
-            route = llm_router.route_prompt("做一个首页")
+            route = llm_router.route_prompt("Create a high-fidelity frontend page.")
 
         self.assertEqual(route.source, "codex")
         self.assertEqual(route.role, "uiux")
@@ -152,7 +172,7 @@ class LlmRouterTests(unittest.TestCase):
             mock.patch.object(llm_router, "call_openai_router", side_effect=ValueError("bad json")),
             mock.patch.object(llm_router, "call_codex_json", return_value=payload) as codex_call,
         ):
-            route = llm_router.route_prompt("做一个首页")
+            route = llm_router.route_prompt("Create a high-fidelity frontend page.")
 
         self.assertEqual(route.source, "codex")
         self.assertIn("openai router fallback used", route.error)
@@ -171,8 +191,8 @@ class LlmRouterTests(unittest.TestCase):
             guard = llm_router.guard_task_input(
                 role="uiux",
                 title="Create page",
-                prompt="Create taobao.html with Tailwind interactions.",
-                artifacts=["html:taobao.html"],
+                prompt="Create sample-page.html with JavaScript interactions.",
+                artifacts=["html:sample-page.html"],
             )
 
         self.assertEqual(guard.source, "mock")

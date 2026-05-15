@@ -36,11 +36,12 @@ skill invocation.
    `divergent` produces options and tradeoff analysis only. `requirements`
    produces requirements and acceptance checks only. `uiux` produces design
    artifacts only and must not create product code files. `prototype` produces
-   prototype specs and interaction contracts only. `fullstack` is the only role
-   allowed to create or modify production implementation code. `tester` may
-   produce reports, screenshots, and test files under test paths, but no
-   production source edits. `reviewer` produces review findings only. `closer`
-   produces closure/audit summaries only.
+   prototype specs and interaction contracts only. `assetgen` produces local
+   image assets, asset briefs, and asset manifests only. `fullstack` is the
+   only role allowed to create or modify production implementation code.
+   `tester` may produce reports, screenshots, and test files under test paths,
+   but no production source edits. `reviewer` produces review findings only.
+   `closer` produces closure/audit summaries only.
 9. Frontend design style must be contextual, not hard-coded. If the project has
    `DESIGN.md`, design tokens, a style guide, screenshots, theme files,
    Storybook, or component docs, workers must use those as authoritative. If no
@@ -55,12 +56,12 @@ skill invocation.
    project source; do not add untraceable model beautification.
    If required images or visual materials are not available locally or from
    project/open-license sources, UI/UX should produce an
-   `asset_generation_brief` that can guide Codex/image generation to create
-   localized bitmap assets. Implementation must store generated assets under a
-   local project asset directory and record a `local_asset_manifest`; do not
-   leave remote hotlinks or blank placeholders as the production asset path.
+   `asset_generation_brief` that can guide the `assetgen` role to create
+   localized bitmap assets. Assetgen must store generated assets under a local
+   project asset directory and record a `local_asset_manifest`; do not leave
+   remote hotlinks or blank placeholders as the production asset path.
 10. Codex workers own planning, divergence, requirements, prototype, UI/UX,
-    full-stack work, tests, review, and closure.
+    asset generation, full-stack work, tests, review, and closure.
     New control-plane behavior belongs in focused `.claude/scripts/` modules;
     do not add unrelated responsibilities to the legacy `taskctl.py` monolith.
 11. `capability` automatically applies `.claude/model_policy.json`; ds v4 should

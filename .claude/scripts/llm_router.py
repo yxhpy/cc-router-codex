@@ -31,6 +31,7 @@ ROLES = {
     "requirements",
     "prototype",
     "uiux",
+    "assetgen",
     "fullstack",
     "tester",
     "reviewer",
@@ -56,6 +57,13 @@ ARTIFACT_KIND_BY_EXT = {
     "rb": "source",
     "cs": "source",
     "sql": "source",
+    "png": "image",
+    "jpg": "image",
+    "jpeg": "image",
+    "webp": "image",
+    "gif": "image",
+    "svg": "image",
+    "avif": "image",
 }
 
 ROUTER_SCHEMA: dict[str, Any] = {
@@ -106,41 +114,46 @@ ROUTER_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
 }
 
-ROUTER_SYSTEM_PROMPT = """你是 taskctl 路由器，只输出一行 JSON，不要解释、不要 Markdown。
-字段必须是: production_work(bool), role, title, worker_prompt, artifacts(string[]), steps(array), reason, confidence(number)。
-production_work=false 仅用于纯聊天、状态询问、概念讨论且没有请求执行产品/代码/设计动作。
-中文请求可能省略动词；如果用户给出页面/app/文件目标、要求模仿/复刻/修改/测试/审查/设计/架构/实现，通常为 true。
-role 只能取: planner(架构/路线/流程/版本), divergent(方案比较), requirements(需求/验收), uiux(设计规范), prototype(原型规格), fullstack(生产代码/页面/后端/数据库/文件/UI素材修复), tester(验证/截图/测试), reviewer(审查), closer(闭环)。
-artifacts 必须是字符串数组，格式 kind:path，禁止对象。例如 ["html:taobao.html"]、["source:src/app.ts"]、["test_report:.claude/artifacts/test_report.md"]。
-steps 是完整的建议原子能力组合，按建议执行顺序排列；每个 step 只能做一种能力，主模型会一步一步协调，不能把固定 workflow 塞进一个 step。
-production_work=true 时，steps 至少包含下一步；如果任务自然需要多个角色协作，必须把后续建议角色也列出来，供主模型逐步选择。
-顶层 role/title/worker_prompt/artifacts 必须等于 steps[0]，即下一步建议执行的原子能力。
-对于面向用户的前端/页面/APP/高保真视觉任务，除非请求明确说明只做设计/只做测试/已有项目设计规范可直接使用，否则 steps 必须至少包含 uiux -> fullstack -> tester：先由 uiux 选择项目规范或 .claude/design-references 中的 DESIGN.md 参考并产出 design_reference_selection/style_contract；如缺少合适本地/open-license视觉素材，还要产出 asset_generation_brief；然后由 fullstack 实现并生成/放置本地 bitmap 资产、记录 local_asset_manifest；最后 tester 验证。不要直接让 fullstack 凭模型审美生成视觉风格或远程热链素材。
-uiux step 必须要求: 先检查项目 DESIGN.md/设计 tokens/组件库/截图；没有项目规范时运行 python .claude/scripts/sync_design_refs.py --offline --quiet，使用 .claude/design-references/manifest.json 和其中 DESIGN.md 文件，记录 design_reference_selection 与 style_contract，并保证颜色、字体、间距、组件状态、媒体选择都可追溯到选中参考，不能自由发挥。如果素材缺失，记录 asset_generation_brief，包含生成提示词、风格约束、尺寸、用途和目标本地路径。
-worker_prompt 必须是一条原子 Codex 任务，要求产出/验证 artifact 后停止。
-"""
+ROUTER_SYSTEM_PROMPT = """You are the taskctl routing classifier. Return exactly one JSON object matching the schema: production_work, role, title, worker_prompt, artifacts, steps, reason, confidence.
 
-TASK_INPUT_GUARD_PROMPT = """你是 taskctl worker 输入守卫，只输出一行 JSON，不要解释、不要 Markdown。
-判断主模型写给 Codex worker 的单步任务是否符合角色边界。
-字段必须是: allowed(bool), has_action(bool), bounded(bool), violation(string), suggested_role(string), confidence(number)。
-角色边界:
-- planner: 计划、架构、路线、流程、版本策略；不能写生产代码
-- divergent: 方案比较/取舍；不能写生产代码
-- requirements: 需求、约束、验收；不能写生产代码
-- uiux: 设计规范、风格、参考、组件映射、视觉审查；不能写生产代码
-- prototype: 原型规格、交互契约、DOM/行为说明；不能写生产 UI 代码
-- fullstack: 生产实现代码、前端、后端、数据库、脚本、HTML/CSS/JS/TS/TSX、UI 素材修复
-- tester: 验证、截图、测试报告、测试文件；不能改生产代码
-- reviewer: 审查发现和风险报告；不能打补丁
-- closer: 闭环/审计摘要；不能打补丁
-如果任务只是引用生产文件做规格/评审/测试报告，不算越界；如果要求创建/修改/修复生产代码且角色不是 fullstack，则 allowed=false。
-对于前端/UI/高保真/视觉风格任务: uiux prompt 必须要求使用项目设计源，或在没有项目设计源时同步并选择 .claude/design-references 中的 DESIGN.md 参考，产出 design_reference_selection/style_contract；如果素材缺失，应产出 asset_generation_brief；如果 uiux prompt 让模型自由发挥审美，则 allowed=false。fullstack/prototype/reviewer/tester 处理视觉任务时必须依赖项目设计源或已有 design_reference_selection/style_contract；如果要求从零创造视觉风格且没有设计源，应 suggested_role=uiux。
-fullstack 如果产出 HTML/CSS/JS/TSX/Vue/Svelte 等前端生产文件，prompt 必须明确引用 style_contract、design_reference_selection 或项目现有设计源；如果需要新视觉素材，必须引用 asset_generation_brief，生成/放置本地 bitmap 文件并记录 local_asset_manifest，不能依赖远程热链；否则 allowed=false，suggested_role=uiux。
-记录 required artifact、保存报告、运行该步骤必要的验证、停止，不算多阶段。
-bounded=false 只用于任务把多个独立能力阶段/固定工作流塞进一个 prompt 的情况，例如同一 prompt 同时要求需求、设计、实现、测试、评审、闭环。
-has_action=false 用于没有明确可执行动作的任务。
-"""
+Set production_work=false for conversation, status questions, explanation-only requests, or requests that do not require project artifacts. Set production_work=true for requests to create, modify, verify, review, plan, design, or close project work.
 
+Choose roles by responsibility: planner for plans and architecture notes, divergent for options and tradeoffs, requirements for acceptance criteria, uiux for design artifacts, prototype for specs and interaction contracts, assetgen for local image asset generation or placement, fullstack for production implementation, tester for reports/screenshots/test files, reviewer for findings, closer for closure summaries.
+
+Artifacts must be strings in kind:path format, never objects. Use neutral examples such as html:sample-page.html, source:src/app.ts, image:assets/generated/sword.png, local_asset_manifest:assets/generated/manifest.json, test_report:.claude/artifacts/test_report.md.
+
+Steps are advisory composition only. The controller will execute one capability at a time and inspect the result before deciding the next step. For production_work=true, include at least one step and mirror the next step into the top-level role/title/worker_prompt/artifacts.
+
+For standalone image asset requests, use assetgen. This includes game assets, web visuals, video thumbnails/key art/overlays, icons, textures, sprites, banners, product renders, and any other picture-related production asset. Assetgen worker prompts should preserve the user's requested subtype: game, web, video, or other.
+
+For user-facing frontend or high-fidelity visual work, prefer uiux -> assetgen -> fullstack -> tester when new media is needed; otherwise prefer uiux -> fullstack -> tester unless the request is explicitly design-only, test-only, asset-only, or already grounded in project design sources. The uiux step must inspect project DESIGN.md, design tokens, component libraries, screenshots, theme files, or local .claude/design-references. It must record design_reference_selection and style_contract. If needed media is missing, record asset_generation_brief. The assetgen step must generate/place local bitmap image assets from the brief, record local_asset_manifest, and avoid remote hotlinks. The fullstack step must reference the design source and local asset manifest.
+
+worker_prompt must be a bounded instruction for one Codex worker. Do not include Markdown outside the JSON object.
+"""
+TASK_INPUT_GUARD_PROMPT = """You are the taskctl worker-input guard. Return exactly one JSON object matching the schema: allowed, has_action, bounded, violation, suggested_role, confidence.
+
+Validate whether the requested worker prompt fits the declared role and is one bounded capability step.
+
+Role boundaries:
+- planner: plans, inventories, sequencing notes, architecture notes only.
+- divergent: options and tradeoff analysis only.
+- requirements: requirements and acceptance checks only.
+- uiux: design artifacts only; no production code files.
+- prototype: prototype specs, DOM hooks, and interaction contracts only; no production UI code.
+- assetgen: local image assets only, including game sprites/icons/textures, web visuals, video thumbnails/key art/overlays, asset_generation_brief, and local_asset_manifest; no product code files.
+- fullstack: production implementation code and scripts.
+- tester: reports, screenshots, and test files under test paths; no production source edits.
+- reviewer: review findings only.
+- closer: closure and audit summaries only.
+
+For standalone image asset work, assetgen prompts may generate or place local png/jpg/webp/svg assets and record local_asset_manifest. They must not create HTML/CSS/JS/TSX/backend/schema/migration files. Assetgen should keep the requested subtype explicit: game asset, web asset, video asset, or other image asset.
+
+For frontend or high-fidelity visual work, uiux prompts must require project design sources or local .claude/design-references and must produce design_reference_selection/style_contract. If new visual media is missing, they should produce asset_generation_brief. Reject uiux prompts that ask the model to invent untraceable visual style.
+
+For fullstack prompts that produce HTML/CSS/JS/TSX/Vue/Svelte or other frontend product files, require an explicit reference to style_contract, design_reference_selection, or an existing project design source. If new visual media is needed, require asset_generation_brief, local bitmap files, local_asset_manifest, and no remote hotlinks. Otherwise allowed=false and suggested_role=uiux.
+
+Reject prompts that are too broad, lack an explicit action, smuggle multiple workflow stages into one capability, or ask an analysis role to implement production code.
+"""
 TASK_INPUT_GUARD_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {

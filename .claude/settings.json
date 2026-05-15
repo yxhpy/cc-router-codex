@@ -15,7 +15,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_intercept_create.py",
+            "command": "python .claude/scripts/hook_intercept_create.py",
             "timeout": 10,
             "statusMessage": "Enforcing taskctl and model policy..."
           }
@@ -28,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_user_prompt_submit.py",
+            "command": "python .claude/scripts/hook_user_prompt_submit.py",
             "timeout": 30,
             "statusMessage": "Routing user goal through taskctl..."
           }
@@ -41,7 +41,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python C:/Users/Administrator/Desktop/cc-router-codex/.claude/scripts/hook_session_start.py",
+            "command": "python .claude/scripts/hook_session_start.py",
             "timeout": 5
           }
         ]

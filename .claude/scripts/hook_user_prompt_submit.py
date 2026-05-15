@@ -112,8 +112,9 @@ returns or fails.
 
 Role boundaries are enforced by the Python filter before Codex can run:
 planner/divergent/requirements/reviewer/closer are analysis-only, uiux is
-design-only, prototype is spec-only, fullstack is the only production-code role,
-and tester may write reports/screenshots/test files but no production source.
+design-only, prototype is spec-only, assetgen is image-asset-only, fullstack is
+the only production-code role, and tester may write reports/screenshots/test
+files but no production source.
 
 Do not use fixed workflows, import-plan, run-job, dependency chains, or manual
 submit/filter/enqueue/run command sequences. How to combine capabilities is
@@ -121,15 +122,15 @@ decided only by the main model after each single-step execution.
 
 Frontend capability steps must still enforce project design specs first, or
 selected DESIGN.md references with traceable style mapping, open-license/project media,
-generated local bitmap assets when media is missing, and sparse SVG usage.
+generated local bitmap assets produced by assetgen when media is missing, and sparse SVG usage.
 
 For frontend/UI work, UI/UX must use project design sources first. If none
 exist, it must run `sync_design_refs.py --offline --quiet` and select from local
 `.claude/design-references`; implementation
 must follow the selected `design_reference_selection`/`style_contract` and must
 not invent untraceable visual styling. If visual media is missing, UI/UX should
-record `asset_generation_brief`; implementation should create/place local
-bitmap assets, record `local_asset_manifest`, and avoid remote hotlinks.
+record `asset_generation_brief`; assetgen should create/place local bitmap
+assets, record `local_asset_manifest`, and avoid remote hotlinks.
 """
 
 

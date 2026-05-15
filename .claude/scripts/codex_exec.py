@@ -61,6 +61,10 @@ FATAL_LOG_PATTERNS = (
 
 def _find_codex() -> str:
     """Find the codex CLI binary. Checks PATH, common install locations, and OS-specific paths."""
+    configured = os.environ.get("CODEX_BIN", "").strip()
+    if configured:
+        return configured
+
     # Prefer PATH resolution. On Windows this finds .cmd shims reliably, while
     # subprocess.run(["codex", ...]) may miss them depending on PATHEXT handling.
     for name in ("codex", "codex.cmd"):
@@ -76,9 +80,6 @@ def _find_codex() -> str:
     # Windows: check npm global install path
     if sys.platform == "win32":
         candidates = [
-            # nvm/node PATH fallback
-            r"C:\\nvm4w\\nodejs\\codex.cmd",
-            r"C:\\nvm4w\\nodejs\\codex",
             # npm global
             os.path.expandvars(r"%APPDATA%\\npm\\codex.cmd"),
             os.path.expandvars(r"%APPDATA%\\npm\\codex"),

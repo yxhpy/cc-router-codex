@@ -3,9 +3,9 @@
 taskctl.py - Python/SQLite control plane for Codex worker tasks.
 
 The main model only submits and monitors jobs. Planning, divergence,
-requirements, prototype, UI/UX, full-stack implementation, testing, review,
-and closure are represented as worker tasks stored in SQLite and executed by
-Codex through this controller.
+requirements, prototype, UI/UX, asset generation, full-stack implementation,
+testing, review, and closure are represented as worker tasks stored in SQLite
+and executed by Codex through this controller.
 """
 
 from __future__ import annotations
@@ -38,6 +38,7 @@ ROLES = (
     "requirements",
     "prototype",
     "uiux",
+    "assetgen",
     "fullstack",
     "tester",
     "reviewer",
@@ -70,6 +71,7 @@ ROLE_BOUNDARIES = {
     "requirements": "Produce requirements, acceptance checks, and constraints only. Do not create or modify product code.",
     "uiux": "Produce design artifacts only, such as style inventory, design reference selection, component map, style contract, or visual review notes. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "prototype": "Produce prototype specifications, DOM/interaction contracts, and behavior notes only. Do not create production UI code.",
+    "assetgen": "Produce or place local image assets only, such as game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "fullstack": "You may create or modify product implementation code for frontend, backend, database, scripts, and production HTML as requested.",
     "tester": "Produce verification reports, screenshots, and test files under test paths only. Do not modify production source files.",
     "reviewer": "Produce review findings and risk reports only. Do not patch product code.",
@@ -351,7 +353,7 @@ def frontend_design_footer() -> str:
     return f"""
 
 {FRONTEND_DESIGN_MARKER}
-If this task involves frontend UI, app pages, marketing/product pages, visual
+If this task involves frontend UI, app pages, marketing/sample pages, visual
 style, high-fidelity screens, icons, images, or interaction polish, design
 source traceability is mandatory:
 - First use project-local sources if present: DESIGN.md, design tokens, theme
@@ -364,8 +366,8 @@ source traceability is mandatory:
   component state, motion, icon/media choice, and density decision must be
   traceable to the selected project/reference source. Do not add untraceable
   model beautification.
-- If your role is prototype, fullstack, tester, or reviewer, use the project
-  design source or prior design_reference_selection/style_contract artifacts.
+- If your role is prototype, assetgen, fullstack, tester, or reviewer, use the
+  project design source or prior design_reference_selection/style_contract artifacts.
   For a new visual frontend without those sources, stop and report that a uiux
   capability is required before implementation instead of inventing style.
 - Prefer project/open-license high-quality images or video for real product,
@@ -375,9 +377,10 @@ source traceability is mandatory:
 - If suitable local/open-license media is missing, generated bitmap assets are
   an allowed localization path. UI/UX tasks should record an
   asset_generation_brief with prompts, style constraints, dimensions, and
-  intended local file paths. Implementation tasks should generate or place the
-  bitmap files under a local project asset directory, record a
-  local_asset_manifest, and reference local paths only.
+  intended local file paths. Assetgen tasks should generate or place the bitmap
+  files under a local project asset directory, record a local_asset_manifest,
+  and reference local paths only. Fullstack tasks then consume those local
+  assets rather than inventing or hotlinking media.
 """
 
 
@@ -1827,7 +1830,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--artifact",
         action="append",
-        help="required artifact as kind:path, e.g. html:taobao.html; auto-recorded if the file exists",
+        help="required artifact as kind:path, e.g. html:sample-page.html; auto-recorded if the file exists",
     )
     p.add_argument("--required-artifact", action="append", help="required artifact kind or kind:path")
     p.add_argument("-m", "--mode", default="workspace", choices=["sandbox", "workspace", "readonly"])

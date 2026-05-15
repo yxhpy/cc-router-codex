@@ -14,8 +14,8 @@ scratch directory.
   from upstream is intended.
 - Missing visual materials can be localized by generated bitmap assets. The
   control plane should capture prompts and constraints in an
-  `asset_generation_brief`, then Codex should create or place the resulting
-  files under a local project asset directory and record a
+  `asset_generation_brief`, then the `assetgen` role should create or place the
+  resulting files under a local project asset directory and record a
   `local_asset_manifest`.
 
 ## File Decomposition
@@ -71,5 +71,5 @@ Claude controller direct writes are intentionally narrow:
 - Product implementation remains Codex-owned through:
 
 ```bash
-python C:/path/to/cc-router-codex/.claude/scripts/taskctl.py capability --role fullstack --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<target-project>" --goal "<user goal>"
+python <control-plane>/.claude/scripts/taskctl.py capability --role fullstack --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "<target-project>" --goal "<user goal>"
 ```

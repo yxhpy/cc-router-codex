@@ -43,16 +43,19 @@ def router_mock(
     steps: list[dict[str, object]] | None = None,
 ) -> dict[str, str]:
     return {
-        "TASKCTL_ROUTER_MOCK_JSON": json.dumps({
-            "production_work": production_work,
-            "role": role,
-            "title": title,
-            "worker_prompt": f"Execute one atomic {role} task and stop.",
-            "artifacts": artifacts or [],
-            "steps": steps or [],
-            "reason": "mocked LLM route",
-            "confidence": 0.91,
-        }, ensure_ascii=False)
+        "TASKCTL_ROUTER_MOCK_JSON": json.dumps(
+            {
+                "production_work": production_work,
+                "role": role,
+                "title": title,
+                "worker_prompt": f"Execute one atomic {role} task and stop.",
+                "artifacts": artifacts or [],
+                "steps": steps or [],
+                "reason": "mocked LLM route",
+                "confidence": 0.91,
+            },
+            ensure_ascii=False,
+        )
     }
 
 
@@ -61,7 +64,7 @@ class HookTests(unittest.TestCase):
         if MAINTENANCE_MARKER.exists():
             MAINTENANCE_MARKER.unlink()
 
-    def test_settings_hook_commands_are_absolute(self) -> None:
+    def test_settings_hook_commands_are_repo_relative(self) -> None:
         settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
         commands = [
             hook["command"]
@@ -72,17 +75,21 @@ class HookTests(unittest.TestCase):
 
         for command in commands:
             _, _, script = command.partition(" ")
-            self.assertTrue(Path(script).is_absolute(), command)
+            self.assertFalse(Path(script).is_absolute(), command)
+            self.assertTrue(script.startswith(".claude/scripts/"), command)
 
     def test_blocks_direct_write_outside_claude(self) -> None:
-        code, output = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": "ecommerce-homepage.html"}})
+        code, output = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": "sample-page.html"}})
 
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
         self.assertIn("taskctl.py capability", output["reason"])
 
     def test_allows_runtime_write_inside_claude(self) -> None:
-        code, output = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": ".claude/artifacts/job-1/report.md"}})
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Write", "tool_input": {"file_path": ".claude/artifacts/job-1/report.md"}},
+        )
 
         self.assertEqual(code, 0)
         self.assertTrue(output["continue"])
@@ -131,7 +138,7 @@ class HookTests(unittest.TestCase):
     def test_blocks_powershell_file_creation(self) -> None:
         code, output = run_hook(
             HOOK,
-            {"tool_name": "Bash", "tool_input": {"command": "Set-Content -Path ecommerce-homepage.html -Value '<html></html>'"}},
+            {"tool_name": "Bash", "tool_input": {"command": "Set-Content -Path sample-page.html -Value '<html></html>'"}},
         )
 
         self.assertEqual(code, 2)
@@ -162,7 +169,7 @@ class HookTests(unittest.TestCase):
         self.assertEqual(output["decision"], "block")
 
     def test_blocks_direct_task_tool(self) -> None:
-        code, output = run_hook(HOOK, {"tool_name": "Task", "tool_input": {"description": "build app"}})
+        code, output = run_hook(HOOK, {"tool_name": "Task", "tool_input": {"description": "build project"}})
 
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
@@ -170,7 +177,7 @@ class HookTests(unittest.TestCase):
     def test_blocks_direct_codex_exec(self) -> None:
         code, output = run_hook(
             HOOK,
-            {"tool_name": "Bash", "tool_input": {"command": "codex exec --sandbox workspace-write 'build app'"}},
+            {"tool_name": "Bash", "tool_input": {"command": "codex exec --sandbox workspace-write 'build project'"}},
         )
 
         self.assertEqual(code, 2)
@@ -239,24 +246,24 @@ class HookTests(unittest.TestCase):
     def test_user_prompt_routes_production_work_to_atomic_control_plane(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "帮我做一个电商app首页使用html + tailwindcss + js高保真首页可交互。"},
-            router_mock(artifacts=["html:index.html"]),
+            {"prompt": "Build a high-fidelity sample page using HTML, CSS, and JavaScript."},
+            router_mock(artifacts=["html:sample-page.html"]),
         )
 
         self.assertEqual(code, 0)
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("taskctl.py capability", context)
         self.assertIn("Router source: mock", context)
-        self.assertIn('--artifact "html:index.html"', context)
+        self.assertIn('--artifact "html:sample-page.html"', context)
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
     def test_user_prompt_uses_payload_cwd_as_target_workspace(self) -> None:
-        target_workspace = (ROOT.parent / "external-target-project").resolve()
+        target_workspace = (ROOT.parent / "target-workspace").resolve()
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "Build a single page arcade game.", "cwd": str(target_workspace)},
-            router_mock(artifacts=["html:index.html"]),
+            {"prompt": "Build a single-page sample prototype.", "cwd": str(target_workspace)},
+            router_mock(artifacts=["html:sample-page.html"]),
         )
 
         self.assertEqual(code, 0)
@@ -266,12 +273,12 @@ class HookTests(unittest.TestCase):
         self.assertNotIn(f'--workspace "{ROOT}"', context)
 
     def test_block_guidance_uses_payload_cwd_as_target_workspace(self) -> None:
-        target_workspace = (ROOT.parent / "external-target-project").resolve()
+        target_workspace = (ROOT.parent / "target-workspace").resolve()
         code, output = run_hook(
             HOOK,
             {
                 "tool_name": "Write",
-                "tool_input": {"file_path": "index.html"},
+                "tool_input": {"file_path": "sample-page.html"},
                 "cwd": str(target_workspace),
             },
         )
@@ -284,8 +291,8 @@ class HookTests(unittest.TestCase):
     def test_user_prompt_notes_fixed_workflows_are_legacy_templates(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "做一个单页面咖啡预约页，HTML + TailwindCSS + JS。"},
-            router_mock(artifacts=["html:coffee.html"]),
+            {"prompt": "Build a single-page reservation flow using HTML, CSS, and JavaScript."},
+            router_mock(artifacts=["html:reservation-page.html"]),
         )
 
         self.assertEqual(code, 0)
@@ -299,8 +306,8 @@ class HookTests(unittest.TestCase):
     def test_user_prompt_routes_file_target_without_help_me_prefix(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "模仿淘宝app首页，使用h5即可，taobao.html"},
-            router_mock(artifacts=["html:taobao.html"]),
+            {"prompt": "Create a sample listing page and save it as sample-page.html."},
+            router_mock(artifacts=["html:sample-page.html"]),
         )
 
         self.assertEqual(code, 0)
@@ -308,13 +315,26 @@ class HookTests(unittest.TestCase):
         self.assertIn("taskctl.py capability", context)
         self.assertIn("Do not directly write/edit", context)
         self.assertIn("--role fullstack", context)
-        self.assertIn('--artifact "html:taobao.html"', context)
+        self.assertIn('--artifact "html:sample-page.html"', context)
+
+    def test_user_prompt_can_route_standalone_image_assets_to_assetgen(self) -> None:
+        code, output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": "Generate a game asset icon and save it locally."},
+            router_mock(role="assetgen", artifacts=["image:assets/generated/game-icon.png"]),
+        )
+
+        self.assertEqual(code, 0)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("--role assetgen", context)
+        self.assertIn('--artifact "image:assets/generated/game-icon.png"', context)
+        self.assertIn("assetgen is image-asset-only", context)
 
     def test_user_prompt_can_suggest_role_composition_before_implementation(self) -> None:
         steps = [
             {
                 "role": "uiux",
-                "title": "Select traceable Taobao app style",
+                "title": "Select traceable sample page style",
                 "worker_prompt": "Use project design sources or .claude/design-references and record design_reference_selection plus style_contract.",
                 "artifacts": [
                     "design_reference_selection:.claude/artifacts/design_reference_selection.md",
@@ -324,22 +344,22 @@ class HookTests(unittest.TestCase):
             },
             {
                 "role": "fullstack",
-                "title": "Implement taobao.html",
-                "worker_prompt": "Implement taobao.html from the style contract.",
-                "artifacts": ["html:taobao.html"],
+                "title": "Implement sample-page.html",
+                "worker_prompt": "Implement sample-page.html from the style contract.",
+                "artifacts": ["html:sample-page.html"],
             },
         ]
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "模仿淘宝app首页，使用h5即可，taobao.html"},
-            router_mock(role="fullstack", artifacts=["html:taobao.html"], steps=steps),
+            {"prompt": "Create a sample listing page and save it as sample-page.html."},
+            router_mock(role="fullstack", artifacts=["html:sample-page.html"], steps=steps),
         )
 
         self.assertEqual(code, 0)
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("LLM-suggested capability composition", context)
-        self.assertIn("1. uiux: Select traceable Taobao app style", context)
-        self.assertIn("2. fullstack: Implement taobao.html", context)
+        self.assertIn("1. uiux: Select traceable sample page style", context)
+        self.assertIn("2. fullstack: Implement sample-page.html", context)
         self.assertIn("--role uiux", context)
         self.assertIn('--artifact "style_contract:.claude/artifacts/style_contract.md"', context)
         self.assertIn("Do not enqueue the whole composition", context)
@@ -349,8 +369,8 @@ class HookTests(unittest.TestCase):
     def test_user_prompt_routes_ui_feedback_without_explicit_action(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "图标也是不符合审美呀"},
-            router_mock(role="fullstack", artifacts=["html:taobao.html"]),
+            {"prompt": "Adjust the sample page visual layout."},
+            router_mock(role="fullstack", artifacts=["html:sample-page.html"]),
         )
 
         self.assertEqual(code, 0)
@@ -360,9 +380,9 @@ class HookTests(unittest.TestCase):
 
     def test_user_prompt_routes_backend_and_architecture_requests(self) -> None:
         examples = {
-            "接口返回订单状态不对，检查一下": "--role fullstack",
-            "基于现在需求设计架构和流程图": "--role planner",
-            "测试登录流程是否通过": "--role tester",
+            "Implement a bounded backend endpoint for the current project.": "--role fullstack",
+            "Create an architecture plan for the current project.": "--role planner",
+            "Verify the current project behavior and write a test report.": "--role tester",
         }
         for prompt, role_hint in examples.items():
             with self.subTest(prompt=prompt):
@@ -376,7 +396,7 @@ class HookTests(unittest.TestCase):
     def test_user_prompt_allows_non_production_when_llm_says_no(self) -> None:
         code, output = run_hook(
             PROMPT_HOOK,
-            {"prompt": "你是谁？"},
+            {"prompt": "Summarize the current status."},
             router_mock(production_work=False, role="closer"),
         )
 

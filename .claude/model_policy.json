@@ -41,6 +41,11 @@
       "reasoning_effort": "high",
       "why": "Converts requirements and style contracts into an implementable design."
     },
+    "assetgen": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Generates or places polished local image assets and manifests with visual-quality risk."
+    },
     "fullstack": {
       "model": "gpt-5.5",
       "reasoning_effort": "high",

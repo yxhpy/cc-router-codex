@@ -77,8 +77,8 @@ class TaskInputFilterTests(unittest.TestCase):
         result = task_input_filter.validate_task_input(
             "fullstack",
             "Create page",
-            "Create taobao.html from the style_contract and record the html artifact.",
-            ["html:taobao.html"],
+            "Create sample-page.html from the style_contract and record the html artifact.",
+            ["html:sample-page.html"],
         )
 
         self.assertTrue(result.passed)
@@ -86,9 +86,9 @@ class TaskInputFilterTests(unittest.TestCase):
     def test_blocks_frontend_fullstack_without_traceable_design_source(self) -> None:
         result = task_input_filter.validate_task_input(
             "fullstack",
-            "Create Taobao page",
-            "Create taobao.html that mimics the Taobao app homepage.",
-            ["html:taobao.html"],
+            "Create sample page",
+            "Create sample-page.html with a new visual direction but no design source.",
+            ["html:sample-page.html"],
         )
 
         self.assertFalse(result.passed)
@@ -97,9 +97,9 @@ class TaskInputFilterTests(unittest.TestCase):
     def test_allows_frontend_fullstack_with_traceable_design_source(self) -> None:
         result = task_input_filter.validate_task_input(
             "fullstack",
-            "Create Taobao page",
-            "Implement taobao.html using the existing style_contract and design_reference_selection.",
-            ["html:taobao.html"],
+            "Create sample page",
+            "Implement sample-page.html using the existing style_contract and design_reference_selection.",
+            ["html:sample-page.html"],
         )
 
         self.assertTrue(result.passed, result.violations)
@@ -107,9 +107,9 @@ class TaskInputFilterTests(unittest.TestCase):
     def test_allows_frontend_fullstack_with_generated_local_asset_contract(self) -> None:
         result = task_input_filter.validate_task_input(
             "fullstack",
-            "Create Taobao page with generated local media",
-            "Implement taobao.html using the style_contract and asset_generation_brief. Generate or place local bitmap assets, record local_asset_manifest, and record the html artifact.",
-            ["html:taobao.html", "local_asset_manifest:assets/generated/manifest.json"],
+            "Create sample page with generated local media",
+            "Implement sample-page.html using the style_contract and asset_generation_brief. Generate or place local bitmap assets, record local_asset_manifest, and record the html artifact.",
+            ["html:sample-page.html", "local_asset_manifest:assets/generated/manifest.json"],
         )
 
         self.assertTrue(result.passed, result.violations)
@@ -118,8 +118,8 @@ class TaskInputFilterTests(unittest.TestCase):
         result = task_input_filter.validate_task_input(
             "uiux",
             "Create page",
-            "Create taobao.html with Tailwind and JavaScript interactions.",
-            ["html:taobao.html"],
+            "Create sample-page.html with JavaScript interactions.",
+            ["html:sample-page.html"],
         )
 
         self.assertFalse(result.passed)
@@ -138,19 +138,54 @@ class TaskInputFilterTests(unittest.TestCase):
 
         self.assertTrue(result.passed)
 
+    def test_allows_assetgen_image_assets_and_manifest(self) -> None:
+        result = task_input_filter.validate_task_input(
+            "assetgen",
+            "Generate game asset images",
+            "Generate a game sprite icon and a web thumbnail as local image assets, then record the image and local_asset_manifest artifacts.",
+            [
+                "image:assets/generated/crystal-sword.png",
+                "local_asset_manifest:assets/generated/manifest.json",
+            ],
+        )
+
+        self.assertTrue(result.passed, result.violations)
+
+    def test_blocks_assetgen_from_product_code(self) -> None:
+        result = task_input_filter.validate_task_input(
+            "assetgen",
+            "Create page code",
+            "Create sample-page.html and record the html artifact.",
+            ["html:sample-page.html"],
+        )
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("role assetgen" in item for item in result.violations))
+
+    def test_blocks_assetgen_from_non_image_artifacts(self) -> None:
+        result = task_input_filter.validate_task_input(
+            "assetgen",
+            "Write notes",
+            "Write a generic implementation report and record the report artifact.",
+            ["report:.claude/artifacts/report.md"],
+        )
+
+        self.assertFalse(result.passed)
+        self.assertTrue(any("only produce image assets" in item for item in result.violations))
+
     def test_blocks_prototype_from_writing_html(self) -> None:
         result = task_input_filter.validate_task_input(
             "prototype",
             "Build prototype",
-            "Build the HTML page at taobao.html using Tailwind.",
-            ["html:taobao.html"],
+            "Build the HTML page at sample-page.html using JavaScript.",
+            ["html:sample-page.html"],
         )
 
         self.assertFalse(result.passed)
         self.assertTrue(any("role prototype" in item for item in result.violations))
 
     def test_non_implementation_roles_all_block_product_code_artifacts(self) -> None:
-        for role in ("planner", "divergent", "requirements", "uiux", "prototype", "reviewer", "closer"):
+        for role in ("planner", "divergent", "requirements", "uiux", "prototype", "assetgen", "reviewer", "closer"):
             with self.subTest(role=role):
                 result = task_input_filter.validate_task_input(
                     role,
@@ -210,9 +245,9 @@ class TaskInputFilterTests(unittest.TestCase):
 
     def test_non_implementation_roles_may_reference_product_paths_in_specs(self) -> None:
         examples = {
-            "requirements": ("Create acceptance checklist", "Create acceptance checklist for taobao.html.", "acceptance_checklist:.claude/artifacts/acceptance.md"),
-            "uiux": ("Create style contract", "Create style contract for taobao.html.", "style_contract:.claude/artifacts/style_contract.md"),
-            "prototype": ("Create prototype spec", "Create prototype spec for taobao.html.", "prototype_spec:.claude/artifacts/prototype.md"),
+            "requirements": ("Create acceptance checklist", "Create acceptance checklist for sample-page.html.", "acceptance_checklist:.claude/artifacts/acceptance.md"),
+            "uiux": ("Create style contract", "Create style contract for sample-page.html.", "style_contract:.claude/artifacts/style_contract.md"),
+            "prototype": ("Create prototype spec", "Create prototype spec for sample-page.html.", "prototype_spec:.claude/artifacts/prototype.md"),
             "tester": ("Create test report", "Create test report for src/app.ts.", "test_report:.claude/artifacts/test_report.md"),
         }
         for role, (title, prompt, artifact) in examples.items():
@@ -242,8 +277,8 @@ class TaskInputFilterTests(unittest.TestCase):
         result = task_input_filter.validate_task_input(
             "fullstack",
             "Implement page",
-            "Create src/app.ts and taobao.html from the style_contract, then record implementation summary.",
-            ["source:src/app.ts", "html:taobao.html"],
+            "Create src/app.ts and sample-page.html from the style_contract, then record implementation summary.",
+            ["source:src/app.ts", "html:sample-page.html"],
         )
         self.assertTrue(result.passed, result.violations)
 

@@ -19,6 +19,7 @@ ALLOWED_ROLES = {
     "requirements",
     "prototype",
     "uiux",
+    "assetgen",
     "fullstack",
     "tester",
     "reviewer",
@@ -53,8 +54,19 @@ CODE_EXTENSIONS = {
     ".hpp",
     ".sql",
 }
+IMAGE_ASSET_EXTENSIONS = {
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".svg",
+    ".avif",
+}
 PRODUCT_CODE_KINDS = {"html", "css", "js", "javascript", "typescript", "code", "source", "implementation"}
-NON_IMPLEMENTATION_ROLES = {"planner", "divergent", "requirements", "uiux", "prototype", "reviewer", "closer"}
+ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
+ASSETGEN_DOCUMENT_KINDS = {"asset_generation_brief", "local_asset_manifest"}
+NON_IMPLEMENTATION_ROLES = {"planner", "divergent", "requirements", "uiux", "prototype", "assetgen", "reviewer", "closer"}
 FRONTEND_CODE_EXTENSIONS = {".html", ".htm", ".css", ".scss", ".sass", ".less", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
 FRONTEND_ARTIFACT_KINDS = {"html", "css", "js", "javascript", "typescript", "frontend", "ui", "source", "code"}
 DESIGN_SOURCE_MARKERS = (
@@ -142,6 +154,15 @@ def _is_frontend_product_artifact(kind: str, path: str) -> bool:
     return suffix in FRONTEND_CODE_EXTENSIONS and not _is_test_path(path)
 
 
+def _is_assetgen_artifact(kind: str, path: str) -> bool:
+    lowered_kind = kind.lower()
+    if lowered_kind in ASSETGEN_DOCUMENT_KINDS:
+        return True
+    if lowered_kind in ASSETGEN_IMAGE_KINDS:
+        return not path or _path_suffix(path) in IMAGE_ASSET_EXTENSIONS
+    return _path_suffix(path) in IMAGE_ASSET_EXTENSIONS
+
+
 def _has_design_source_marker(text: str) -> bool:
     return any(marker in text for marker in DESIGN_SOURCE_MARKERS)
 
@@ -175,6 +196,14 @@ def _artifact_role_violations(role: str, artifacts: list[str]) -> list[str]:
             if _is_product_code_artifact(kind, path):
                 violations.append(
                     f"role {role} cannot produce product code artifact {kind}:{path or '<no path>'}; use fullstack"
+                )
+
+    if role == "assetgen":
+        for artifact in artifacts:
+            kind, path = _artifact_parts(artifact)
+            if not _is_assetgen_artifact(kind, path):
+                violations.append(
+                    f"role assetgen can only produce image assets or asset manifests, got {kind}:{path or '<no path>'}"
                 )
 
     if role == "tester":

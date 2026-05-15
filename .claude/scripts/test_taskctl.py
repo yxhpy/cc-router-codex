@@ -152,6 +152,29 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn("asset_generation_brief", row["prompt"])
         self.assertIn("local_asset_manifest", row["prompt"])
 
+    def test_assetgen_role_is_accepted_and_scoped_to_image_assets(self) -> None:
+        job_id = self.submit_job()
+        output = self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "assetgen",
+            "--title",
+            "Generate reusable image asset",
+            "--prompt",
+            "Generate a reusable web hero image asset at assets/generated/hero.png and record the image artifact.",
+            "--required-artifact",
+            "image:assets/generated/hero.png",
+        )
+        task_id = int(output.split()[1])
+
+        with contextlib.closing(taskctl.connect(self.db)) as conn:
+            row = conn.execute("SELECT role, prompt FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+        self.assertEqual(row["role"], "assetgen")
+        self.assertIn("Role: assetgen", row["prompt"])
+        self.assertIn("image assets only", row["prompt"])
+
     def test_execute_task_requires_step_artifacts(self) -> None:
         job_id = self.submit_job()
         task_id = self.enqueue_step(job_id)
@@ -171,10 +194,10 @@ class TaskCtlTests(unittest.TestCase):
         log_path.write_text("worker said ok", encoding="utf-8")
 
         def fake_run(cmd, **kwargs):
-            self.assertIn("html: taobao.html", cmd[-1])
-            self.assertIn("--path \"taobao.html\"", cmd[-1])
+            self.assertIn("html: sample-page.html", cmd[-1])
+            self.assertIn("--path \"sample-page.html\"", cmd[-1])
             self.assertEqual(Path(kwargs["cwd"]).resolve(), Path(self.workspace).resolve())
-            Path(self.workspace, "taobao.html").write_text("<html>ok</html>", encoding="utf-8")
+            Path(self.workspace, "sample-page.html").write_text("<html>ok</html>", encoding="utf-8")
             return mock.Mock(returncode=0, stdout=f"SUCCESS\nLOG: {log_path}\n", stderr="")
 
         with mock.patch.object(worker_runner.subprocess, "run", side_effect=fake_run):
@@ -184,11 +207,11 @@ class TaskCtlTests(unittest.TestCase):
                     "--role",
                     "fullstack",
                     "--title",
-                    "Create Taobao page",
+                    "Create sample page",
                     "--prompt",
-                    "Create the Taobao H5 page at taobao.html from the style_contract and record the html artifact.",
+                    "Create the sample page at sample-page.html from the style_contract and record the html artifact.",
                     "--artifact",
-                    "html:taobao.html",
+                    "html:sample-page.html",
                     "--workspace",
                     self.workspace,
                     "--json",
@@ -199,7 +222,7 @@ class TaskCtlTests(unittest.TestCase):
         self.assertTrue(payload["audit_complete"])
         with contextlib.closing(taskctl.connect(self.db)) as conn:
             row = conn.execute("SELECT kind, path FROM artifacts WHERE task_id = ?", (payload["task_id"],)).fetchone()
-        self.assertEqual(dict(row), {"kind": "html", "path": "taobao.html"})
+        self.assertEqual(dict(row), {"kind": "html", "path": "sample-page.html"})
 
     def test_invalid_workspace_file_is_rejected_before_job_insert(self) -> None:
         workspace_file = Path(self.tmp.name) / "workspace-file"

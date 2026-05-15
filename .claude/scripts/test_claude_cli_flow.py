@@ -11,7 +11,6 @@ import json
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -129,8 +128,8 @@ def check_smoke() -> None:
 
 def check_routing_context() -> None:
     prompts = {
-        "routing": "帮我做一个电商app首页使用html + tailwindcss + js高保真首页可交互。",
-        "routing-file-target": "模仿淘宝app首页，使用h5即可，taobao.html",
+        "routing": "Build a high-fidelity sample page using HTML, CSS, and JavaScript.",
+        "routing-file-target": "Create a sample listing page and save it as sample-page.html.",
     }
     for name, prompt in prompts.items():
         events = run_claude(
@@ -147,7 +146,7 @@ def check_routing_context() -> None:
         )
         require_hook_output_contains(events, "UserPromptSubmit", "taskctl.py capability", "atomic capability command")
         require_hook_output_contains(events, "UserPromptSubmit", "--artifact <kind:path>", "artifact binding guidance")
-        require_hook_output_contains(events, "UserPromptSubmit", "recommended first tool call", "concrete command guidance")
+        require_hook_output_contains(events, "UserPromptSubmit", "Recommended next tool call", "concrete command guidance")
         if name == "routing-file-target":
             text = event_text(events)
             require_contains(text, '"name": "Bash"', "first action uses Bash/taskctl")

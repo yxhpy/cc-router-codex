@@ -20,7 +20,7 @@ These rules apply even when no skill is explicitly invoked.
   configurable. Do not replace semantic routing or role-boundary inference with
   regex/keyword rules.
 - The router may suggest a task-specific role composition such as `uiux ->
-  fullstack -> tester`, but this is advisory, not a fixed workflow. The
+  assetgen -> fullstack -> tester`, but this is advisory, not a fixed workflow. The
   controller runs only one `capability` at a time, inspects the result, then
   decides whether to run, skip, or revise the next capability.
 - For production work, use exactly one atomic capability command:
@@ -67,6 +67,9 @@ semantic role-boundary judgment:
   migration edits.
 - `prototype`: prototype specifications, DOM/interaction contracts, behavior
   notes. No production UI code.
+- `assetgen`: image assets only, including game assets, web visuals, video
+  thumbnails/key art/overlays, icons, textures, sprites, product renders,
+  `asset_generation_brief`, and `local_asset_manifest`. No product code files.
 - `fullstack`: the only role that may create or modify product implementation
   code, including frontend, backend, database, scripts, and production HTML.
 - `tester`: verification reports, screenshots, and test files under test paths.
@@ -98,10 +101,9 @@ semantic role-boundary judgment:
 - If suitable local/open-license media is missing, use generated bitmap assets
   as a localization path instead of remote hotlinks or empty placeholders.
   UI/UX should record an `asset_generation_brief` with prompts, style
-  constraints, dimensions, and intended file paths; the implementing Codex
-  worker should create or place the generated files under a local project asset
-  directory and record a `local_asset_manifest`. Product pages should reference
-  those local files only.
+  constraints, dimensions, and intended file paths; `assetgen` should create or
+  place the generated files under a local project asset directory and record a
+  `local_asset_manifest`. Product pages should reference those local files only.
 
 ## Completion Rules
 
