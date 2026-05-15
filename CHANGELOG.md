@@ -6,6 +6,12 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.4 - 2026-05-15
+
+- Made the end-to-end test runner force UTF-8 subprocess I/O so Windows GitHub
+  runners with non-UTF-8 default encodings do not fail before hook execution.
+- Replaced a corrupted non-ASCII test prompt fixture with an ASCII fixture.
+
 ## 0.1.3 - 2026-05-15
 
 - Normalized prompt-template MCP fingerprints against resolved install paths so

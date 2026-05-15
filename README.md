@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.3`.
+Current release: `v0.1.4`.
 
 ## What It Does
 

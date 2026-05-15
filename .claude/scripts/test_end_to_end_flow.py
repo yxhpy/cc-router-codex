@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """End-to-end smoke test for single-step taskctl capability execution."""
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ HOOK = SCRIPTS / "hook_intercept_create.py"
 PROMPT_HOOK = SCRIPTS / "hook_user_prompt_submit.py"
 SKILL_VALIDATE = Path.home() / ".codex" / "skills" / ".system" / "skill-creator" / "scripts" / "quick_validate.py"
 FOCUS_STATE = ROOT / ".claude" / "task-plans" / "focus_state.json"
-GOAL = "帮我做一个单步能力测试页面"
+GOAL = "Build one single-step capability test page."
 
 
 def input_guard_mock() -> dict[str, str]:
@@ -57,6 +57,8 @@ def run_command(
         input=input_text,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=str(ROOT),
         timeout=timeout,
         env=merged_env,
