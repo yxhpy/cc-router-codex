@@ -11,6 +11,7 @@ import unittest
 from unittest import mock
 
 import llm_router
+import route_cache
 
 
 class LlmRouterTests(unittest.TestCase):
@@ -199,6 +200,44 @@ class LlmRouterTests(unittest.TestCase):
         self.assertFalse(guard.allowed)
         self.assertEqual(guard.suggested_role, "fullstack")
         self.assertEqual(guard.violation, "role mismatch")
+
+    def test_route_token_matches_only_exact_recent_route(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            cache_path = Path(tmp) / "route-cache.json"
+            with mock.patch.dict(os.environ, {"TASKCTL_ROUTE_CACHE_PATH": str(cache_path)}, clear=False):
+                token = route_cache.store_route_token(
+                    role="tester",
+                    title="Verify flow",
+                    prompt="Run verification and record the test report.",
+                    artifacts=["test_report:.claude/artifacts/test_report.md"],
+                    workspace=str(Path(tmp) / "workspace"),
+                    goal="Verify the current flow.",
+                    source="codex",
+                    confidence=0.9,
+                )
+
+                accepted = route_cache.validate_route_token(
+                    token,
+                    role="tester",
+                    title="Verify flow",
+                    prompt="Run verification and record the test report.",
+                    artifacts=["test_report:.claude/artifacts/test_report.md"],
+                    workspace=str(Path(tmp) / "workspace"),
+                    goal="Verify the current flow.",
+                )
+                rejected = route_cache.validate_route_token(
+                    token,
+                    role="tester",
+                    title="Verify flow",
+                    prompt="Run a different verification.",
+                    artifacts=["test_report:.claude/artifacts/test_report.md"],
+                    workspace=str(Path(tmp) / "workspace"),
+                    goal="Verify the current flow.",
+                )
+
+        self.assertTrue(accepted.accepted)
+        self.assertFalse(rejected.accepted)
+        self.assertIn("does not match", rejected.reason)
 
 
 if __name__ == "__main__":

@@ -36,6 +36,7 @@ def main() -> int:
         "test_llm_router.py",
         "test_model_policy.py",
         "test_codex_exec.py",
+        "test_assetgen_exec.py",
         "test_sync_design_refs.py",
         "test_safety_filter.py",
     ]

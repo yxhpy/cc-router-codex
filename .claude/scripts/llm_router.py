@@ -124,9 +124,9 @@ Artifacts must be strings in kind:path format, never objects. Use neutral exampl
 
 Steps are advisory composition only. The controller will execute one capability at a time and inspect the result before deciding the next step. For production_work=true, include at least one step and mirror the next step into the top-level role/title/worker_prompt/artifacts.
 
-For standalone image asset requests, use assetgen. This includes game assets, web visuals, video thumbnails/key art/overlays, icons, textures, sprites, banners, product renders, and any other picture-related production asset. Assetgen worker prompts should preserve the user's requested subtype: game, web, video, or other.
+For standalone image asset requests, use assetgen. This includes game assets, web visuals, video thumbnails/key art/overlays, icons, textures, sprites, banners, product renders, and any other picture-related production asset. Assetgen worker prompts should preserve the user's requested subtype: game, web, video, or other, and should target raster files such as png, jpg, jpeg, or webp, never SVG.
 
-For user-facing frontend or high-fidelity visual work, prefer uiux -> assetgen -> fullstack -> tester when new media is needed; otherwise prefer uiux -> fullstack -> tester unless the request is explicitly design-only, test-only, asset-only, or already grounded in project design sources. The uiux step must inspect project DESIGN.md, design tokens, component libraries, screenshots, theme files, or local .claude/design-references. It must record design_reference_selection and style_contract. If needed media is missing, record asset_generation_brief. The assetgen step must generate/place local bitmap image assets from the brief, record local_asset_manifest, and avoid remote hotlinks. The fullstack step must reference the design source and local asset manifest.
+For user-facing frontend or high-fidelity visual work, prefer uiux -> assetgen -> fullstack -> tester when new media is needed; otherwise prefer uiux -> fullstack -> tester unless the request is explicitly design-only, test-only, asset-only, or already grounded in project design sources. The uiux step must inspect project DESIGN.md, design tokens, component libraries, screenshots, theme files, or local .claude/design-references. It must record design_reference_selection and style_contract. If needed media is missing, record asset_generation_brief. The assetgen step must generate/place local bitmap image assets from the brief through `.claude/scripts/assetgen_exec.py`, record local_asset_manifest, and avoid remote hotlinks or SVG placeholders. The fullstack step must reference the design source and local asset manifest.
 
 worker_prompt must be a bounded instruction for one Codex worker. Do not include Markdown outside the JSON object.
 """
@@ -146,7 +146,7 @@ Role boundaries:
 - reviewer: review findings only.
 - closer: closure and audit summaries only.
 
-For standalone image asset work, assetgen prompts may generate or place local png/jpg/webp/svg assets and record local_asset_manifest. They must not create HTML/CSS/JS/TSX/backend/schema/migration files. Assetgen should keep the requested subtype explicit: game asset, web asset, video asset, or other image asset.
+For standalone image asset work, assetgen prompts may generate or place local raster assets through `.claude/scripts/assetgen_exec.py` and record local_asset_manifest. Allowed generated image outputs are png/jpg/jpeg/webp only; do not use SVG for assetgen outputs. They must not create HTML/CSS/JS/TSX/backend/schema/migration files. Assetgen should keep the requested subtype explicit: game asset, web asset, video asset, or other image asset.
 
 For frontend or high-fidelity visual work, uiux prompts must require project design sources or local .claude/design-references and must produce design_reference_selection/style_contract. If new visual media is missing, they should produce asset_generation_brief. Reject uiux prompts that ask the model to invent untraceable visual style.
 

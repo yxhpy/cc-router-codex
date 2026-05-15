@@ -255,6 +255,7 @@ class HookTests(unittest.TestCase):
         self.assertIn("taskctl.py capability", context)
         self.assertIn("Router source: mock", context)
         self.assertIn('--artifact "html:sample-page.html"', context)
+        self.assertIn("--route-token", context)
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
@@ -299,8 +300,8 @@ class HookTests(unittest.TestCase):
         context = output["hookSpecificOutput"]["additionalContext"]
         self.assertIn("Do not use fixed workflows", context)
         self.assertIn("open-license/project media", context)
-        self.assertIn("generated local bitmap assets", context)
-        self.assertIn("sparse SVG usage", context)
+        self.assertIn("generated local raster assets", context)
+        self.assertIn("no SVG generated-asset fallback", context)
         self.assertIn("local_asset_manifest", context)
 
     def test_user_prompt_routes_file_target_without_help_me_prefix(self) -> None:

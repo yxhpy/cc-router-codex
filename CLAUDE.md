@@ -17,8 +17,11 @@ These rules apply even when no skill is explicitly invoked.
   `.claude/scripts/llm_router.py`. Provider/model settings live in
   `.claude/.env`; Codex CLI `gpt-5.4-mini` with an output schema is preferred
   for stable routing/guard JSON. The OpenAI-compatible SDK path remains
-  configurable. Do not replace semantic routing or role-boundary inference with
-  regex/keyword rules.
+  configurable. Generated router commands may include a short-lived
+  `--route-token` so `taskctl.py capability` can reuse the exact recent LLM
+  routing decision instead of running a second classifier; deterministic
+  role/artifact checks and `safety_filter.py` still run. Do not replace
+  semantic routing or role-boundary inference with regex/keyword rules.
 - The router may suggest a task-specific role composition such as `uiux ->
   assetgen -> fullstack -> tester`, but this is advisory, not a fixed workflow. The
   controller runs only one `capability` at a time, inspects the result, then
@@ -32,6 +35,8 @@ python .claude/scripts/taskctl.py capability --role <role> --title "<title>" --p
 - `capability` validates the worker prompt, stores one SQLite job/task, runs one
   Codex worker, auto-records expected artifact paths when files exist, and
   prints the audit result.
+- Hook-generated `capability` commands may also pass `--route-token <token>` to
+  avoid repeating the same LLM route/guard decision for an unchanged step.
 - Do not manually expand normal work into `submit-auto`, `filter-input`,
   `enqueue`, and `run-next`. Those commands are debugging/recovery primitives.
 - Do not use fixed workflows, `submit-frontend`, `submit-system`,
@@ -67,9 +72,11 @@ semantic role-boundary judgment:
   migration edits.
 - `prototype`: prototype specifications, DOM/interaction contracts, behavior
   notes. No production UI code.
-- `assetgen`: image assets only, including game assets, web visuals, video
-  thumbnails/key art/overlays, icons, textures, sprites, product renders,
-  `asset_generation_brief`, and `local_asset_manifest`. No product code files.
+- `assetgen`: local raster image assets only, generated through the built-in
+  `.claude/scripts/assetgen_exec.py` Codex backend, including game assets, web
+  visuals, video thumbnails/key art/overlays, icons, textures, sprites,
+  product renders, `asset_generation_brief`, and `local_asset_manifest`. No
+  SVG outputs or product code files.
 - `fullstack`: the only role that may create or modify product implementation
   code, including frontend, backend, database, scripts, and production HTML.
 - `tester`: verification reports, screenshots, and test files under test paths.
@@ -95,15 +102,17 @@ semantic role-boundary judgment:
   traceable to the project source or selected `.claude/design-references`
   DESIGN.md files.
 - Use high-quality project/open-license images or video for real product,
-  place, people, or atmosphere visuals. SVG is limited to icons, logos,
-  diagrams, and small functional marks unless the selected design reference
-  explicitly requires otherwise.
+  place, people, or atmosphere visuals. Generated assetgen media must be local
+  raster output from `.claude/scripts/assetgen_exec.py`; SVG is limited to
+  manually coded icons, logos, diagrams, and small functional marks unless the
+  selected design reference explicitly requires otherwise.
 - If suitable local/open-license media is missing, use generated bitmap assets
   as a localization path instead of remote hotlinks or empty placeholders.
   UI/UX should record an `asset_generation_brief` with prompts, style
-  constraints, dimensions, and intended file paths; `assetgen` should create or
-  place the generated files under a local project asset directory and record a
-  `local_asset_manifest`. Product pages should reference those local files only.
+  constraints, dimensions, and intended raster file paths; `assetgen` should
+  create the generated files under a local project asset directory with
+  `.claude/scripts/assetgen_exec.py` and record a `local_asset_manifest`.
+  Product pages should reference those local files only.
 
 ## Completion Rules
 

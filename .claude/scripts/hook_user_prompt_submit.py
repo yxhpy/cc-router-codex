@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import llm_router
+import route_cache
 from hook_context import target_workspace
 from project_paths import script_path
 
@@ -48,13 +49,15 @@ def artifact_args(artifacts: list[str]) -> str:
     return " ".join(f"--artifact {ps_quote(item)}" for item in artifacts)
 
 
-def suggested_command(route: llm_router.Route, prompt: str, workspace: str) -> str:
+def suggested_command(route: llm_router.Route, prompt: str, workspace: str, route_token: str = "") -> str:
+    token_arg = f"--route-token {ps_quote(route_token)} " if route_token else ""
     return (
         f"python {ps_quote(str(script_path('taskctl.py')))} capability "
         f"--role {route.role} "
         f"--title {ps_quote(route.title)} "
         f"--prompt {ps_quote(route.worker_prompt)} "
         f"{artifact_args(route.artifacts)} "
+        f"{token_arg}"
         f"--workspace {ps_quote(workspace)} "
         f"--goal {ps_quote(prompt)}"
     )
@@ -71,7 +74,7 @@ def composition_context(route: llm_router.Route) -> str:
     return "\n".join(lines)
 
 
-def routing_context(prompt: str, route: llm_router.Route, workspace: str) -> str:
+def routing_context(prompt: str, route: llm_router.Route, workspace: str, route_token: str = "") -> str:
     route_note = f"Router source: {route.source}; confidence: {route.confidence:.2f}; reason: {route.reason}"
     if route.error:
         route_note += f"; router_error: {route.error}"
@@ -96,7 +99,7 @@ and audit result, then decide whether to run, skip, or revise later suggested
 capabilities. Do not enqueue the whole composition.
 
 Recommended next tool call is Bash with:
-{suggested_command(route, prompt, workspace)}
+{suggested_command(route, prompt, workspace, route_token)}
 
 Run the absolute Python command directly. Do not `cd /d`, and do not change
 into the control-plane repository unless that is the user's actual target
@@ -122,15 +125,17 @@ decided only by the main model after each single-step execution.
 
 Frontend capability steps must still enforce project design specs first, or
 selected DESIGN.md references with traceable style mapping, open-license/project media,
-generated local bitmap assets produced by assetgen when media is missing, and sparse SVG usage.
+generated local raster assets produced by assetgen through `.claude/scripts/assetgen_exec.py`
+when media is missing, and no SVG generated-asset fallback.
 
 For frontend/UI work, UI/UX must use project design sources first. If none
 exist, it must run `sync_design_refs.py --offline --quiet` and select from local
 `.claude/design-references`; implementation
 must follow the selected `design_reference_selection`/`style_contract` and must
 not invent untraceable visual styling. If visual media is missing, UI/UX should
-record `asset_generation_brief`; assetgen should create/place local bitmap
-assets, record `local_asset_manifest`, and avoid remote hotlinks.
+record `asset_generation_brief`; assetgen should create local raster assets
+through `.claude/scripts/assetgen_exec.py`, record `local_asset_manifest`, and
+avoid remote hotlinks or SVG placeholders.
 """
 
 
@@ -147,11 +152,26 @@ def main() -> int:
         return 0
 
     workspace = target_workspace(payload)
+    route_token = ""
+    if route.source in {"openai", "codex", "mock"} and not route.error:
+        try:
+            route_token = route_cache.store_route_token(
+                role=route.role,
+                title=route.title,
+                prompt=route.worker_prompt,
+                artifacts=route.artifacts,
+                workspace=workspace,
+                goal=prompt,
+                source=route.source,
+                confidence=route.confidence,
+            )
+        except OSError:
+            route_token = ""
     print(json.dumps({
         "continue": True,
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
-            "additionalContext": routing_context(prompt, route, workspace),
+            "additionalContext": routing_context(prompt, route, workspace, route_token),
         },
     }, ensure_ascii=False))
     return 0

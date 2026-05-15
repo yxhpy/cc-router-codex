@@ -59,9 +59,6 @@ IMAGE_ASSET_EXTENSIONS = {
     ".jpg",
     ".jpeg",
     ".webp",
-    ".gif",
-    ".svg",
-    ".avif",
 }
 PRODUCT_CODE_KINDS = {"html", "css", "js", "javascript", "typescript", "code", "source", "implementation"}
 ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
@@ -224,6 +221,8 @@ def validate_task_input(
     title: str,
     prompt: str,
     required_artifacts: Iterable[str] | None = None,
+    *,
+    skip_llm_guard: bool = False,
 ) -> TaskInputResult:
     violations: list[str] = []
     warnings: list[str] = []
@@ -252,7 +251,7 @@ def validate_task_input(
 
     violations.extend(_artifact_role_violations(role, artifacts))
     violations.extend(_frontend_design_source_violations(role, title, prompt, artifacts))
-    if not violations and role in ALLOWED_ROLES:
+    if not violations and role in ALLOWED_ROLES and not skip_llm_guard:
         guard = _llm_guard_result(role, title, prompt, artifacts)
         if not guard.allowed:
             detail = guard.violation or "role boundary rejected by LLM task input guard"
@@ -289,8 +288,10 @@ def require_valid_task_input(
     title: str,
     prompt: str,
     required_artifacts: Iterable[str] | None = None,
+    *,
+    skip_llm_guard: bool = False,
 ) -> TaskInputResult:
-    result = validate_task_input(role, title, prompt, required_artifacts)
+    result = validate_task_input(role, title, prompt, required_artifacts, skip_llm_guard=skip_llm_guard)
     if not result.passed:
         details = "; ".join(result.violations)
         raise SystemExit(f"ERROR: task input rejected by filter: {details}")

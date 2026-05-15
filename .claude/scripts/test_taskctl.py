@@ -13,6 +13,8 @@ from pathlib import Path
 from unittest import mock
 
 import taskctl
+import task_input_filter
+import route_cache
 import worker_runner
 
 
@@ -174,6 +176,34 @@ class TaskCtlTests(unittest.TestCase):
         self.assertEqual(row["role"], "assetgen")
         self.assertIn("Role: assetgen", row["prompt"])
         self.assertIn("image assets only", row["prompt"])
+        self.assertIn(".claude/scripts/assetgen_exec.py", row["prompt"])
+        self.assertIn("Do not create SVG", row["prompt"])
+
+    def test_assetgen_dry_run_uses_codex_image_script(self) -> None:
+        job_id = self.submit_job()
+        self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "assetgen",
+            "--title",
+            "Generate reusable web hero",
+            "--prompt",
+            "Generate a reusable web hero image at assets/generated/hero.png and record the local_asset_manifest.",
+            "--required-artifact",
+            "image:assets/generated/hero.png",
+            "--required-artifact",
+            "local_asset_manifest:assets/generated/manifest.json",
+        )
+
+        dry_run = json.loads(self.run_cli("run-next", str(job_id), "--dry-run"))
+
+        self.assertEqual(dry_run["role"], "assetgen")
+        self.assertIn(str(Path(".claude/scripts/assetgen_exec.py")), dry_run["command"][1])
+        self.assertIn("--output", dry_run["command"])
+        self.assertIn("assets/generated/hero.png", dry_run["command"])
+        self.assertIn("--manifest", dry_run["command"])
+        self.assertIn("assets/generated/manifest.json", dry_run["command"])
 
     def test_execute_task_requires_step_artifacts(self) -> None:
         job_id = self.submit_job()
@@ -223,6 +253,64 @@ class TaskCtlTests(unittest.TestCase):
         with contextlib.closing(taskctl.connect(self.db)) as conn:
             row = conn.execute("SELECT kind, path FROM artifacts WHERE task_id = ?", (payload["task_id"],)).fetchone()
         self.assertEqual(dict(row), {"kind": "html", "path": "sample-page.html"})
+
+    def test_capability_route_token_skips_duplicate_llm_guard(self) -> None:
+        prompt = "Create the sample page at sample-page.html from the style_contract and record the html artifact."
+        goal = "Create sample page"
+        token_cache = Path(self.tmp.name) / "route-cache.json"
+        log_path = Path(self.tmp.name) / "codex-ok.log"
+        log_path.write_text("worker said ok", encoding="utf-8")
+
+        with mock.patch.dict(
+            os.environ,
+            {
+                "TASKCTL_ROUTE_CACHE_PATH": str(token_cache),
+                "TASKCTL_INPUT_GUARD_MOCK_JSON": "",
+            },
+            clear=False,
+        ):
+            token = route_cache.store_route_token(
+                role="fullstack",
+                title="Create sample page",
+                prompt=prompt,
+                artifacts=["html:sample-page.html"],
+                workspace=self.workspace,
+                goal=goal,
+                source="codex",
+                confidence=0.91,
+            )
+
+            def fake_run(cmd, **kwargs):
+                Path(self.workspace, "sample-page.html").write_text("<html>ok</html>", encoding="utf-8")
+                return mock.Mock(returncode=0, stdout=f"SUCCESS\nLOG: {log_path}\n", stderr="")
+
+            with (
+                mock.patch.object(task_input_filter.llm_router, "guard_task_input", side_effect=AssertionError("duplicate guard")),
+                mock.patch.object(worker_runner.subprocess, "run", side_effect=fake_run),
+            ):
+                payload = json.loads(
+                    self.run_cli(
+                        "capability",
+                        "--role",
+                        "fullstack",
+                        "--title",
+                        "Create sample page",
+                        "--prompt",
+                        prompt,
+                        "--artifact",
+                        "html:sample-page.html",
+                        "--workspace",
+                        self.workspace,
+                        "--goal",
+                        goal,
+                        "--route-token",
+                        token,
+                        "--json",
+                    )
+                )
+
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertEqual(payload["route_token"], "matched recent LLM router output")
 
     def test_invalid_workspace_file_is_rejected_before_job_insert(self) -> None:
         workspace_file = Path(self.tmp.name) / "workspace-file"

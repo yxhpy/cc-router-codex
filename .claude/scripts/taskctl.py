@@ -23,6 +23,7 @@ from typing import Any, Iterable
 
 import model_policy
 from project_paths import REPO_ROOT
+import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
 import worker_runner
 
@@ -65,13 +66,16 @@ EXPERIENCE_STATUSES = {
 EXPERIENCE_FOOTER_MARKER = "[TASKCTL EXPERIENCE CAPTURE]"
 ROLE_BOUNDARY_MARKER = "[TASKCTL ROLE BOUNDARY]"
 FRONTEND_DESIGN_MARKER = "[TASKCTL FRONTEND DESIGN SOURCE]"
+REQUIRED_ARTIFACT_MARKER = "[TASKCTL REQUIRED ARTIFACTS]"
+ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
+ASSETGEN_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
 ROLE_BOUNDARIES = {
     "planner": "Produce plans, inventories, sequencing notes, or architecture notes only. Do not create or modify product code.",
     "divergent": "Produce options, tradeoff analysis, and alternatives only. Do not create or modify product code.",
     "requirements": "Produce requirements, acceptance checks, and constraints only. Do not create or modify product code.",
     "uiux": "Produce design artifacts only, such as style inventory, design reference selection, component map, style contract, or visual review notes. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "prototype": "Produce prototype specifications, DOM/interaction contracts, and behavior notes only. Do not create production UI code.",
-    "assetgen": "Produce or place local image assets only, such as game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
+    "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py, such as game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
     "fullstack": "You may create or modify product implementation code for frontend, backend, database, scripts, and production HTML as requested.",
     "tester": "Produce verification reports, screenshots, and test files under test paths only. Do not modify production source files.",
     "reviewer": "Produce review findings and risk reports only. Do not patch product code.",
@@ -371,16 +375,18 @@ source traceability is mandatory:
   For a new visual frontend without those sources, stop and report that a uiux
   capability is required before implementation instead of inventing style.
 - Prefer project/open-license high-quality images or video for real product,
-  place, people, or atmosphere visuals. Use SVG only for icons, logos,
-  diagrams, or tiny functional marks unless the selected design source requires
-  it.
+  place, people, or atmosphere visuals. Assetgen outputs must be local raster
+  files generated through `.claude/scripts/assetgen_exec.py`; do not use SVG as
+  an assetgen fallback. SVG remains limited to manually coded icons, logos,
+  diagrams, or tiny functional marks when the design source requires it.
 - If suitable local/open-license media is missing, generated bitmap assets are
   an allowed localization path. UI/UX tasks should record an
   asset_generation_brief with prompts, style constraints, dimensions, and
-  intended local file paths. Assetgen tasks should generate or place the bitmap
-  files under a local project asset directory, record a local_asset_manifest,
-  and reference local paths only. Fullstack tasks then consume those local
-  assets rather than inventing or hotlinking media.
+  intended local file paths. Assetgen tasks should generate the bitmap files
+  under a local project asset directory with `.claude/scripts/assetgen_exec.py`,
+  record a local_asset_manifest, and reference local paths only. Fullstack
+  tasks then consume those local assets rather than inventing or hotlinking
+  media.
 """
 
 
@@ -622,7 +628,30 @@ def ensure_no_active_step(conn: sqlite3.Connection, job_id: int) -> None:
 
 def run_capability(args: argparse.Namespace) -> int:
     required_artifacts = normalize_required_artifacts([*(args.required_artifact or []), *(args.artifact or [])])
-    require_valid_task_input(args.role, args.title, args.prompt, required_artifacts)
+    token_check = route_cache.RouteTokenCheck(False, "route token not provided")
+    token_workspace = args.workspace
+    if args.route_token:
+        if args.job_id is not None:
+            with closing(connect(args.db)) as token_conn:
+                token_workspace = load_job(token_conn, int(args.job_id))["workspace"]
+        else:
+            token_workspace = prepare_workspace(args.workspace)
+        token_check = route_cache.validate_route_token(
+            args.route_token,
+            role=args.role,
+            title=args.title,
+            prompt=args.prompt,
+            artifacts=required_artifacts,
+            workspace=token_workspace,
+            goal=args.goal or args.title,
+        )
+    require_valid_task_input(
+        args.role,
+        args.title,
+        args.prompt,
+        required_artifacts,
+        skip_llm_guard=token_check.accepted,
+    )
 
     with closing(connect(args.db)) as conn:
         with conn:
@@ -664,6 +693,7 @@ def run_capability(args: argparse.Namespace) -> int:
         "missing_artifact_kinds": audit_result["missing_artifact_kinds"],
         "missing_artifact_files": audit_result["missing_artifact_files"],
         "summary": result["summary"],
+        "route_token": token_check.reason,
     }
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -933,20 +963,87 @@ def auto_record_expected_artifacts(conn: sqlite3.Connection, job: sqlite3.Row, t
         )
 
 
+def strip_task_footers(prompt: str) -> str:
+    text = str(prompt or "").strip()
+    marker_positions = [
+        position
+        for marker in (
+            ROLE_BOUNDARY_MARKER,
+            FRONTEND_DESIGN_MARKER,
+            REQUIRED_ARTIFACT_MARKER,
+            EXPERIENCE_FOOTER_MARKER,
+        )
+        if (position := text.find(marker)) >= 0
+    ]
+    if marker_positions:
+        text = text[: min(marker_positions)].rstrip()
+    return text
+
+
+def artifact_path_suffix(path: str) -> str:
+    name = str(path or "").replace("\\", "/").rsplit("/", 1)[-1]
+    dot = name.rfind(".")
+    if dot <= 0:
+        return ""
+    return name[dot:].lower()
+
+
+def assetgen_command_paths(required_artifacts_json: str | None) -> tuple[list[str], str]:
+    outputs: list[str] = []
+    manifest = ""
+    for kind, path in artifact_specs_from_json(required_artifacts_json):
+        lowered_kind = kind.lower()
+        suffix = artifact_path_suffix(path)
+        if lowered_kind == "local_asset_manifest" and path:
+            manifest = path
+            continue
+        if lowered_kind in ASSETGEN_IMAGE_KINDS and path and suffix in ASSETGEN_RASTER_EXTENSIONS:
+            outputs.append(path)
+    return outputs, manifest
+
+
+def infer_asset_role(title: str, prompt: str) -> str:
+    folded = f"{title}\n{prompt}".lower()
+    if any(word in folded for word in ("game", "sprite", "texture", "tile", "prop")):
+        return "game"
+    if any(word in folded for word in ("video", "thumbnail", "key art", "storyboard", "overlay")):
+        return "video"
+    if any(word in folded for word in ("web", "website", "hero", "banner", "landing", "app")):
+        return "web"
+    return "other"
+
+
 def build_worker_command(
     job: sqlite3.Row,
     workflow: str,
     task: sqlite3.Row,
     mode: str,
 ) -> tuple[list[str], dict[str, Any]]:
-    cmd = [
-        sys.executable,
-        str(SCRIPT_DIR / "codex_exec.py"),
-        "-w",
-        job["workspace"],
-        "-m",
-        mode,
-    ]
+    if task["role"] == "assetgen":
+        outputs, manifest = assetgen_command_paths(task["required_artifacts_json"])
+        cmd = [
+            sys.executable,
+            str(SCRIPT_DIR / "assetgen_exec.py"),
+            "--workspace",
+            job["workspace"],
+            "--prompt",
+            strip_task_footers(task["prompt"]),
+            "--asset-role",
+            infer_asset_role(task["title"], task["prompt"]),
+        ]
+        for output_path in outputs:
+            cmd.extend(["--output", output_path])
+        if manifest:
+            cmd.extend(["--manifest", manifest])
+    else:
+        cmd = [
+            sys.executable,
+            str(SCRIPT_DIR / "codex_exec.py"),
+            "-w",
+            job["workspace"],
+            "-m",
+            mode,
+        ]
     policy_payload: dict[str, Any] = {"enabled": False}
     if model_policy.policy_enabled():
         choice = model_policy.select_model(workflow, task["role"])
@@ -961,7 +1058,10 @@ def build_worker_command(
             cmd.extend(["--model", choice.model])
         if not resolved["reasoning_overridden_by_env"]:
             cmd.extend(["--reasoning-effort", choice.reasoning_effort])
-    cmd.append(task["prompt"])
+    if task["role"] == "assetgen":
+        pass
+    else:
+        cmd.append(task["prompt"])
     return cmd, policy_payload
 
 
@@ -1835,6 +1935,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--required-artifact", action="append", help="required artifact kind or kind:path")
     p.add_argument("-m", "--mode", default="workspace", choices=["sandbox", "workspace", "readonly"])
     p.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT_SECONDS)
+    p.add_argument("--route-token", help="short-lived token proving this capability matches recent LLM router output")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run_capability)
 

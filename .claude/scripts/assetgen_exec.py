@@ -1,0 +1,388 @@
+#!/usr/bin/env python3
+"""Codex-only raster image asset generator.
+
+This is the only image-generation entry point used by the taskctl assetgen
+role. It delegates generation to the local Codex CLI, verifies that requested
+outputs are real raster files, and optionally writes a local asset manifest.
+It intentionally has no DALL-E/OpenAI image API path and no SVG fallback.
+"""
+
+from __future__ import annotations
+
+import argparse
+from dataclasses import dataclass
+from datetime import datetime, timezone
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+from typing import Any, Iterable, Mapping, Sequence
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import codex_exec
+
+
+RASTER_FORMATS = {"png", "jpg", "jpeg", "webp"}
+ASSET_ROLES = {
+    "game": (
+        "Create production-ready game art with a clear silhouette, reusable "
+        "shapes, clean edges, and strong readability at small sizes."
+    ),
+    "web": (
+        "Create a polished website or app visual asset with clean composition, "
+        "responsive-crop friendly framing, and useful negative space."
+    ),
+    "video": (
+        "Create cinematic key art, a thumbnail, a storyboard frame, or a video "
+        "visual asset with a strong focal point and readable framing."
+    ),
+    "other": (
+        "Create a polished reusable image asset suitable for downstream design "
+        "or production work."
+    ),
+}
+
+
+class AssetgenError(RuntimeError):
+    """Raised when the asset generator cannot produce verified raster files."""
+
+
+@dataclass(frozen=True)
+class OutputImage:
+    index: int
+    path: Path
+    format: str
+
+
+def now_stamp() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def resolve_workspace(value: str) -> Path:
+    path = Path(value).expanduser().resolve()
+    if not path.is_dir():
+        raise AssetgenError(f"workspace is not a directory: {path}")
+    return path
+
+
+def resolve_inside_workspace(workspace: Path, value: str, *, label: str) -> Path:
+    if not value or not str(value).strip():
+        raise AssetgenError(f"{label} path is required")
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = workspace / path
+    resolved = path.resolve()
+    try:
+        resolved.relative_to(workspace)
+    except ValueError as exc:
+        raise AssetgenError(f"{label} path escapes workspace: {value}") from exc
+    return resolved
+
+
+def raster_format_for_path(path: Path) -> str:
+    suffix = path.suffix.lower().lstrip(".")
+    if suffix == "jpeg":
+        return "jpg"
+    if suffix not in RASTER_FORMATS:
+        allowed = ", ".join(sorted(RASTER_FORMATS - {"jpeg"}))
+        raise AssetgenError(f"assetgen outputs must be raster files ({allowed}); got {path.name}")
+    return suffix
+
+
+def output_images(workspace: Path, values: Iterable[str]) -> list[OutputImage]:
+    images: list[OutputImage] = []
+    seen: set[Path] = set()
+    for value in values:
+        path = resolve_inside_workspace(workspace, value, label="output")
+        if path in seen:
+            continue
+        seen.add(path)
+        images.append(OutputImage(index=len(images) + 1, path=path, format=raster_format_for_path(path)))
+    if not images:
+        raise AssetgenError("assetgen requires at least one --output raster path")
+    return images
+
+
+def verify_raster(path: Path, image_format: str) -> None:
+    if not path.is_file():
+        raise AssetgenError(f"expected image file was not created: {path}")
+    data = path.read_bytes()
+    if not data:
+        raise AssetgenError(f"generated image file is empty: {path}")
+    if image_format == "png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise AssetgenError(f"generated file is not a PNG image: {path}")
+    if image_format == "jpg" and not data.startswith(b"\xff\xd8\xff"):
+        raise AssetgenError(f"generated file is not a JPEG image: {path}")
+    if image_format == "webp" and not (data[:4] == b"RIFF" and data[8:12] == b"WEBP"):
+        raise AssetgenError(f"generated file is not a WebP image: {path}")
+
+
+def build_output_schema(count: int) -> dict[str, Any]:
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": False,
+        "properties": {
+            "images": {
+                "type": "array",
+                "minItems": count,
+                "maxItems": count,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": False,
+                    "properties": {
+                        "index": {"type": "integer"},
+                        "path": {"type": "string"},
+                        "format": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["index", "path", "format", "description"],
+                },
+            },
+            "notes": {"type": "string"},
+        },
+        "required": ["images", "notes"],
+    }
+
+
+def asset_prompt(prompt: str, asset_role: str) -> str:
+    role = ASSET_ROLES.get(asset_role or "other", ASSET_ROLES["other"])
+    return (
+        f"{role}\n\n"
+        "User request:\n"
+        f"{prompt.strip()}\n\n"
+        "Requirements:\n"
+        "- Generate reusable production image assets, not decorative placeholders.\n"
+        "- Do not write SVG, HTML, CSS, or vector-only assets.\n"
+        "- Do not hotlink remote images.\n"
+        "- The final files must be real raster files at the exact requested paths.\n"
+        "- Avoid rendering text inside images unless explicitly requested by the user."
+    )
+
+
+def build_codex_prompt(prompt: str, images: Sequence[OutputImage], *, size: str, style: str, asset_role: str) -> str:
+    targets = "\n".join(f"{image.index}. {image.path} ({image.format})" for image in images)
+    style_line = style.strip() if style and style.strip() else "Use the user request and asset role as the style source."
+    return f"""You are a Codex image asset backend.
+
+Create exactly {len(images)} raster image file(s) for this asset request:
+
+{asset_prompt(prompt, asset_role)}
+
+Write the file(s) exactly here:
+{targets}
+
+Generation contract:
+- Use the available Codex image-generation capability or another Codex-controlled raster-writing method.
+- Target size: {size}
+- Style guidance: {style_line}
+- Do not create SVG files or vector placeholders.
+- Do not create a different filename, extension, or directory.
+- If you cannot create valid raster image files, leave the files absent so verification fails.
+- After writing the files, respond only with JSON matching the supplied schema.
+"""
+
+
+def parse_json_object(text: str) -> Mapping[str, Any]:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        raise AssetgenError("Codex did not return a JSON final message")
+    fence = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", cleaned, flags=re.DOTALL | re.I)
+    if fence:
+        cleaned = fence.group(1).strip()
+    try:
+        parsed = json.loads(cleaned)
+    except json.JSONDecodeError:
+        start = cleaned.find("{")
+        end = cleaned.rfind("}")
+        if start < 0 or end <= start:
+            raise AssetgenError("Codex final message did not contain JSON") from None
+        parsed = json.loads(cleaned[start : end + 1])
+    if not isinstance(parsed, dict):
+        raise AssetgenError("Codex final message was not a JSON object")
+    return parsed
+
+
+def verify_payload(payload: Mapping[str, Any], images: Sequence[OutputImage], workspace: Path) -> None:
+    items = payload.get("images")
+    if not isinstance(items, list):
+        raise AssetgenError("Codex JSON payload is missing images")
+    if len(items) != len(images):
+        raise AssetgenError(f"Codex returned {len(items)} image item(s), expected {len(images)}")
+    for expected, item in zip(images, items):
+        if not isinstance(item, Mapping):
+            raise AssetgenError(f"image item {expected.index} is not an object")
+        declared = resolve_inside_workspace(workspace, str(item.get("path") or ""), label="declared image")
+        if declared != expected.path:
+            raise AssetgenError(f"Codex declared unexpected image path: {declared}")
+        verify_raster(expected.path, expected.format)
+
+
+def build_command(
+    *,
+    codex_bin: str,
+    workspace: Path,
+    output_dirs: Sequence[Path],
+    schema_path: Path,
+    message_path: Path,
+    model: str,
+    reasoning_effort: str,
+    sandbox: str,
+) -> list[str]:
+    resolved_sandbox, _ = codex_exec._resolve_sandbox_mode(sandbox)
+    cmd = [
+        codex_bin,
+        "exec",
+        "--sandbox",
+        resolved_sandbox,
+        "--skip-git-repo-check",
+        "-C",
+        str(workspace),
+        "--output-schema",
+        str(schema_path),
+        "--output-last-message",
+        str(message_path),
+        "--color",
+        "never",
+        "--ephemeral",
+    ]
+    for directory in output_dirs:
+        cmd.extend(["--add-dir", str(directory)])
+    if model:
+        cmd.extend(["--model", model])
+    if reasoning_effort:
+        effort, _ = codex_exec._normalize_reasoning_effort(reasoning_effort)
+        if effort:
+            cmd.extend(["-c", f'model_reasoning_effort="{effort}"'])
+    cmd.append("-")
+    return cmd
+
+
+def run_codex(command: Sequence[str], prompt: str, *, timeout: int) -> subprocess.CompletedProcess[str]:
+    env = os.environ.copy()
+    env["NO_COLOR"] = "1"
+    env["PYTHONIOENCODING"] = "utf-8"
+    codex_exec._apply_proxy_env(env)
+    return subprocess.run(
+        list(command),
+        input=prompt,
+        cwd=None,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=timeout,
+        check=False,
+    )
+
+
+def write_manifest(path: Path, workspace: Path, images: Sequence[OutputImage], *, prompt: str, size: str, style: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "backend": "codex",
+        "generated_at": now_stamp(),
+        "prompt": prompt,
+        "size": size,
+        "style": style,
+        "images": [
+            {
+                "index": image.index,
+                "path": image.path.relative_to(workspace).as_posix(),
+                "format": image.format,
+                "bytes": image.path.stat().st_size,
+            }
+            for image in images
+        ],
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Generate raster image assets through Codex only.")
+    parser.add_argument("--workspace", required=True, help="Target project workspace.")
+    parser.add_argument("--prompt", required=True, help="Asset prompt.")
+    parser.add_argument("--output", action="append", required=True, help="Raster output path inside the workspace.")
+    parser.add_argument("--manifest", help="Optional local_asset_manifest JSON path inside the workspace.")
+    parser.add_argument("--asset-role", choices=sorted(ASSET_ROLES), default="other")
+    parser.add_argument("--size", default="1024x1024")
+    parser.add_argument("--style", default="")
+    parser.add_argument("--model", default=os.environ.get("CODEX_MODEL", ""))
+    parser.add_argument("--reasoning-effort", default=os.environ.get("CODEX_REASONING_EFFORT", ""))
+    parser.add_argument("--sandbox", default=os.environ.get("ASSETGEN_CODEX_SANDBOX", "workspace"))
+    parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", ""))
+    parser.add_argument("--timeout", type=int, default=int(os.environ.get("ASSETGEN_CODEX_TIMEOUT", "900")))
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        workspace = resolve_workspace(args.workspace)
+        images = output_images(workspace, args.output or [])
+        manifest = (
+            resolve_inside_workspace(workspace, args.manifest, label="manifest")
+            if args.manifest
+            else None
+        )
+        for image in images:
+            image.path.parent.mkdir(parents=True, exist_ok=True)
+            if image.path.exists():
+                image.path.unlink()
+
+        codex_bin = args.codex_bin.strip() or codex_exec._find_codex()
+        output_dirs = sorted({image.path.parent for image in images}, key=lambda item: str(item))
+        with tempfile.TemporaryDirectory(prefix=".assetgen_", dir=str(workspace)) as tmp:
+            tmp_path = Path(tmp)
+            schema_path = tmp_path / "assetgen_schema.json"
+            message_path = tmp_path / "assetgen_last_message.json"
+            schema_path.write_text(json.dumps(build_output_schema(len(images)), ensure_ascii=False), encoding="utf-8")
+            prompt = build_codex_prompt(
+                args.prompt,
+                images,
+                size=args.size,
+                style=args.style,
+                asset_role=args.asset_role,
+            )
+            command = build_command(
+                codex_bin=codex_bin,
+                workspace=workspace,
+                output_dirs=output_dirs,
+                schema_path=schema_path,
+                message_path=message_path,
+                model=args.model,
+                reasoning_effort=args.reasoning_effort,
+                sandbox=args.sandbox,
+            )
+            result = run_codex(command, prompt, timeout=args.timeout)
+            final_text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.exists() else result.stdout
+            if result.returncode != 0:
+                raise AssetgenError(
+                    "Codex image generation failed with exit %s\nstdout:\n%s\nstderr:\n%s"
+                    % (result.returncode, result.stdout.strip(), result.stderr.strip())
+                )
+            verify_payload(parse_json_object(final_text), images, workspace)
+        if manifest:
+            write_manifest(manifest, workspace, images, prompt=args.prompt, size=args.size, style=args.style)
+    except (AssetgenError, OSError, subprocess.TimeoutExpired, FileNotFoundError, json.JSONDecodeError) as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print("SUCCESS")
+    for image in images:
+        print(image.path.relative_to(workspace).as_posix())
+    if manifest:
+        print(f"MANIFEST: {manifest.relative_to(workspace).as_posix()}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
