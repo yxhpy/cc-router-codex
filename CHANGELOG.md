@@ -6,6 +6,11 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.3 - 2026-05-15
+
+- Normalized prompt-template MCP fingerprints against resolved install paths so
+  cached readiness is stable on clean Windows runners.
+
 ## 0.1.2 - 2026-05-15
 
 - Fixed Stop hook JSON output so blocking responses use only Claude-supported

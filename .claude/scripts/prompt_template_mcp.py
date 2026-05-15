@@ -316,15 +316,17 @@ def required_paths(target: Path) -> list[Path]:
 
 
 def install_fingerprint(target: Path) -> dict[str, dict[str, int | str]] | None:
+    root = target.expanduser().resolve()
     result: dict[str, dict[str, int | str]] = {}
-    for path in required_paths(target):
+    for path in required_paths(root):
         if not path.is_file():
             return None
+        resolved = path.expanduser().resolve()
         try:
-            key = path.relative_to(target).as_posix()
+            key = resolved.relative_to(root).as_posix()
         except ValueError:
-            key = str(path)
-        stat = path.stat()
+            key = str(resolved)
+        stat = resolved.stat()
         result[key] = {"size": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
     return result
 
