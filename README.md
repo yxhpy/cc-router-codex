@@ -7,7 +7,7 @@ Claude/Codex control plane with taskctl routing, role boundaries, and Codex-only
 Windows PowerShell, from the target project directory:
 
 ```powershell
-$p="$env:TEMP\cc-router-install.ps1"; irm https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p
+$p="$env:TEMP\cc-router-install.ps1"; iwr https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p
 ```
 
 Linux/macOS, from the target project directory:
@@ -23,7 +23,7 @@ If the target already has `.claude` or `CLAUDE.md`, the installer prints the pat
 For non-interactive overwrite:
 
 ```powershell
-$p="$env:TEMP\cc-router-install.ps1"; irm https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Yes
+$p="$env:TEMP\cc-router-install.ps1"; iwr https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Yes
 ```
 
 ```sh
@@ -33,7 +33,7 @@ curl -fsSL https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.
 To install into an explicit target:
 
 ```powershell
-$p="$env:TEMP\cc-router-install.ps1"; irm https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Target C:\path\to\project
+$p="$env:TEMP\cc-router-install.ps1"; iwr https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.ps1 -OutFile $p; powershell -ExecutionPolicy Bypass -File $p -Target C:\path\to\project
 ```
 
 ```sh
