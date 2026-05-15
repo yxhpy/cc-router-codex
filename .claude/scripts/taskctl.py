@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import model_policy
-from project_paths import REPO_ROOT
+from project_paths import REPO_ROOT, python_command
 import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
 import worker_runner
@@ -445,12 +445,12 @@ def artifact_contract_footer(required_artifacts: Iterable[str] | None) -> str:
         if path:
             lines.append(f"- {kind}: {path}")
             lines.append(
-                f'  PowerShell: python .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "{path}" --summary "{kind} artifact"'
+                f'  PowerShell: {python_command()} .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "{path}" --summary "{kind} artifact"'
             )
         else:
             lines.append(f"- {kind}: choose the correct produced file path and record it")
             lines.append(
-                f'  PowerShell: python .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "<path>" --summary "{kind} artifact"'
+                f'  PowerShell: {python_command()} .claude/scripts/taskctl.py artifact $env:TASKCTL_TASK_ID --kind {kind} --path "<path>" --summary "{kind} artifact"'
             )
     return "\n".join(lines) + "\n"
 

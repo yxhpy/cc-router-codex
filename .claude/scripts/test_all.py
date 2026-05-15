@@ -37,6 +37,7 @@ def main() -> int:
         "test_model_policy.py",
         "test_codex_exec.py",
         "test_assetgen_exec.py",
+        "test_install.py",
         "test_sync_design_refs.py",
         "test_safety_filter.py",
     ]
@@ -51,7 +52,7 @@ def main() -> int:
     if args.real_claude_cli:
         run([py, "-B", str(SCRIPTS / "test_claude_cli_flow.py")], "test_claude_cli_flow.py")
 
-    run([py, "-B", "-m", "py_compile", *[str(path) for path in SCRIPTS.glob("*.py")]], "py_compile")
+    run([py, "-B", "-m", "py_compile", str(ROOT / "install.py"), *[str(path) for path in SCRIPTS.glob("*.py")]], "py_compile")
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "settings.json")], "settings.json", quiet=True)
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "model_policy.json")], "model_policy.json", quiet=True)
 

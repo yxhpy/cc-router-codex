@@ -9,7 +9,7 @@ import sys
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import target_workspace
-from project_paths import script_path
+from project_paths import python_command, script_path
 
 
 SAFE_SCRIPT_NAMES = (
@@ -23,12 +23,14 @@ SAFE_SCRIPT_NAMES = (
     "hook_",
 )
 
+PYTHON_CMD = r'(?:"[^"]*(?:python|python3|py)(?:\.exe)?"|\S*(?:python|python3|py)(?:\.exe)?|py|python|python3)'
+
 SAFE_BASH_CMDS = [
     # Control-plane tooling. File writes inside these scripts are policy-owned.
-    r'^(?:py|python|python3)\s+["\']?\.claude[\\/]scripts[\\/](?:'
+    r"^" + PYTHON_CMD + r'\s+["\']?\.claude[\\/]scripts[\\/](?:'
     + "|".join(SAFE_SCRIPT_NAMES)
     + r')\S*\.py["\']?',
-    r'^(?:py|python|python3)\s+(?:"[^"]*[\\/]\.claude[\\/]scripts[\\/](?:'
+    r"^" + PYTHON_CMD + r'\s+(?:"[^"]*[\\/]\.claude[\\/]scripts[\\/](?:'
     + "|".join(SAFE_SCRIPT_NAMES)
     + r')\S*\.py"|\'[^\']*[\\/]\.claude[\\/]scripts[\\/](?:'
     + "|".join(SAFE_SCRIPT_NAMES)
@@ -57,7 +59,7 @@ def taskctl_guidance(workspace: str) -> str:
 Use exactly one atomic control-plane command for the target project workspace.
 Required command: taskctl.py capability.
 
-python "{script_path('taskctl.py')}" capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{workspace}" --goal "<user goal>"
+{python_command()} "{script_path('taskctl.py')}" capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{workspace}" --goal "<user goal>"
 
 Run the absolute Python command directly. Do not use cmd-only `cd /d`, and do
 not change into the control-plane repository unless it is the user's actual

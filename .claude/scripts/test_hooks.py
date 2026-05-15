@@ -225,6 +225,21 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertTrue(output["continue"])
 
+    def test_allows_installed_absolute_python_taskctl_command(self) -> None:
+        taskctl = ROOT / ".claude" / "scripts" / "taskctl.py"
+        code, output = run_hook(
+            HOOK,
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": f'"C:\\Program Files\\Python312\\python.exe" "{taskctl}" status 1'
+                },
+            },
+        )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
     def test_blocks_taskctl_stdout_file_redirect(self) -> None:
         code, output = run_hook(
             HOOK,
