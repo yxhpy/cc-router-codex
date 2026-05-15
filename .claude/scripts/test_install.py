@@ -87,6 +87,7 @@ def make_source(root: Path) -> Path:
         encoding="utf-8",
     )
     (source / "CLAUDE.md").write_text("# Rules\n", encoding="utf-8")
+    (source / "VERSION").write_text("0.1.0\n", encoding="utf-8")
     (source / "VERSIONING.md").write_text("# Versioning\n", encoding="utf-8")
     return source
 
@@ -105,6 +106,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(result.target, target.resolve())
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertTrue((target / "VERSION").exists())
             self.assertTrue((target / "VERSIONING.md").exists())
             self.assertFalse((target / ".claude" / "task-plans" / "route-cache.json").exists())
             self.assertFalse((target / ".claude" / "artifacts" / "old.txt").exists())
@@ -190,6 +192,7 @@ class InstallTests(unittest.TestCase):
 
             self.assertFalse((target / ".claude" / "old.txt").exists())
             self.assertEqual((target / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
+            self.assertEqual((target / "VERSION").read_text(encoding="utf-8"), "0.1.0\n")
             self.assertEqual((target / "VERSIONING.md").read_text(encoding="utf-8"), "# Versioning\n")
 
     def test_refuses_to_install_over_source_repository(self) -> None:

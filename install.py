@@ -114,7 +114,7 @@ def ensure_target_directory(path: Path) -> Path:
 
 def conflicts_for(target: Path) -> list[Path]:
     conflicts: list[Path] = []
-    for name in (".claude", "CLAUDE.md", "VERSIONING.md"):
+    for name in (".claude", "CLAUDE.md", "VERSION", "VERSIONING.md"):
         path = target / name
         if path.exists():
             conflicts.append(path)
@@ -318,19 +318,22 @@ def install_control_plane(
 
     source_claude = source / ".claude"
     source_claude_md = source / "CLAUDE.md"
+    source_version = source / "VERSION"
     source_versioning = source / "VERSIONING.md"
     if not source_claude.is_dir() or not source_claude_md.is_file():
         raise SystemExit(f"ERROR: source is missing .claude or CLAUDE.md: {source}")
 
     conflicts = conflicts_for(target)
     if conflicts and not yes and not confirm_overwrite(conflicts, input_func=input_func, output_func=output_func):
-        raise SystemExit("ABORTED: existing .claude, CLAUDE.md, or VERSIONING.md was not overwritten")
+        raise SystemExit("ABORTED: existing .claude, CLAUDE.md, VERSION, or VERSIONING.md was not overwritten")
 
     for path in conflicts:
         safe_remove(path, target)
 
     shutil.copytree(source_claude, target / ".claude", ignore=copy_ignore)
     shutil.copy2(source_claude_md, target / "CLAUDE.md")
+    if source_version.is_file():
+        shutil.copy2(source_version, target / "VERSION")
     if source_versioning.is_file():
         shutil.copy2(source_versioning, target / "VERSIONING.md")
     (target / ".claude" / "artifacts").mkdir(exist_ok=True)
@@ -342,7 +345,13 @@ def install_control_plane(
     settings_path = target / ".claude" / "settings.json"
     rewrite_settings(settings_path, detection)
 
-    copied = (".claude", "CLAUDE.md", "VERSIONING.md", ".claude/.env") if source_versioning.is_file() else (".claude", "CLAUDE.md", ".claude/.env")
+    copied_items = [".claude", "CLAUDE.md"]
+    if source_version.is_file():
+        copied_items.append("VERSION")
+    if source_versioning.is_file():
+        copied_items.append("VERSIONING.md")
+    copied_items.append(".claude/.env")
+    copied = tuple(copied_items)
     return InstallResult(target=target, copied=copied, env_path=env_path, settings_path=settings_path, detection=detection)
 
 

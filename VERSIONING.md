@@ -3,6 +3,18 @@
 This repository treats bundled control-plane files and external runtime helpers
 as separate version surfaces.
 
+## cc-router-codex release version
+
+The repository release version is SemVer and lives in `VERSION`.
+
+- Patch: documentation, tests, small guard hardening, or installer fixes that
+  preserve the public control-plane contract.
+- Minor: new roles, hooks, commands, runtime integrations, or stricter
+  control-plane behavior.
+- Major: incompatible command, artifact, hook, install, or policy changes.
+
+Git release tags must use `vX.Y.Z` and match the `VERSION` file exactly.
+
 ## image-2-prompt MCP
 
 The image prompt-template MCP is versioned by the exact git commit SHA resolved
