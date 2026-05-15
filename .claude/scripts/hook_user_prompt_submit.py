@@ -40,6 +40,11 @@ def extract_prompt(payload: dict[str, object]) -> str:
     return ""
 
 
+def is_background_task_notification(prompt: str) -> bool:
+    text = str(prompt or "").strip()
+    return text.startswith("<task-notification>") and "</task-notification>" in text
+
+
 def ps_quote(value: str) -> str:
     return '"' + str(value or "").replace('"', '`"') + '"'
 
@@ -154,6 +159,9 @@ def main() -> int:
     payload = read_hook_json()
     prompt = extract_prompt(payload)
     if not prompt:
+        print(json.dumps({"continue": True}))
+        return 0
+    if is_background_task_notification(prompt):
         print(json.dumps({"continue": True}))
         return 0
 

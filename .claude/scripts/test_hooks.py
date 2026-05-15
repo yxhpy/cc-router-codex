@@ -306,6 +306,23 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
+    def test_user_prompt_ignores_background_task_notifications(self) -> None:
+        notification = """<task-notification>
+<task-id>abc123</task-id>
+<status>completed</status>
+<summary>Background command completed (exit code 0)</summary>
+</task-notification>"""
+
+        code, output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": notification, "cwd": str(ROOT)},
+            router_mock(artifacts=["html:sample-page.html"]),
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output, {"continue": True})
+        self.assertFalse(FOCUS_STATE.exists())
+
     def test_stop_hook_blocks_active_focus_until_complete_or_exhausted(self) -> None:
         code, _output = run_hook(
             PROMPT_HOOK,
