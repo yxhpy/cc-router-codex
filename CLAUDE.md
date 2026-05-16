@@ -161,6 +161,16 @@ semantic role-boundary judgment:
   `python .claude/scripts/skill_manifest_check.py` in an installed target, or
   `python tools/skill_manifest_check.py` in the source repository.
 
+## Experience Atoms
+
+- Reusable lessons may include atom metadata: atom type, topics, related
+  skills, source URL/path, source command, and failure signature.
+- Prefer accepting high-confidence lessons. Use
+  `experience-sync-skill --min-confidence 4` when generating compact skill
+  output for broad reuse.
+- Mark contradicted lessons with `experience-stale` and conflict ids instead of
+  deleting evidence.
+
 ## Completion Rules
 
 - A task is not successful just because Codex exits successfully. Required

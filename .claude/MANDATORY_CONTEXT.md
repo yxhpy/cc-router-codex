@@ -103,7 +103,11 @@ skill invocation.
 14. Accepted lessons are synchronized into the compact generated
     `learned-experience` skill with `taskctl.py experience-sync-skill`.
     Wrong, stale, duplicate, or vague lessons must be rejected or pruned instead
-    of accumulating forever.
+    of accumulating forever. When useful, add atom metadata such as topic,
+    related skill, source URL/path, source command, or failure signature.
+    Mark contradicted lessons with `experience-stale`; use
+    `experience-sync-skill --min-confidence 4` when broad reuse should exclude
+    weak accepted lessons.
 14a. Bundled skill publication is governed by `.claude/skill-manifest.json`.
     Draft, deprecated, and private skills must not be published under
     `.claude/skills/` or `.claude/plugins/*/skills/`. After editing bundled

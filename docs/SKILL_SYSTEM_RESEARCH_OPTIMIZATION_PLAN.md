@@ -291,6 +291,8 @@ Changes:
 
 Goal: make learned experiences searchable and safer to reuse.
 
+Status: implemented in `v0.1.20`.
+
 Changes:
 
 - Add optional atom-like fields to experiences.

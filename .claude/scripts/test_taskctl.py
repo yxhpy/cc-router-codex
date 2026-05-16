@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -627,6 +628,179 @@ class TaskCtlTests(unittest.TestCase):
         self.assertEqual(report["job_id"], job_id)
         self.assertEqual(report["checkpoint_count"], 1)
         self.assertIn("Resume failed debug report", report["content"])
+
+    def test_experience_schema_migrates_existing_database_to_atom_columns(self) -> None:
+        old_schema = """
+        CREATE TABLE experiences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id INTEGER NOT NULL,
+            task_id INTEGER,
+            workflow TEXT NOT NULL DEFAULT 'general',
+            role TEXT NOT NULL DEFAULT '',
+            kind TEXT NOT NULL,
+            title TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            evidence TEXT NOT NULL DEFAULT '',
+            reuse_hint TEXT NOT NULL DEFAULT '',
+            tags_json TEXT NOT NULL DEFAULT '[]',
+            confidence INTEGER NOT NULL DEFAULT 3,
+            status TEXT NOT NULL DEFAULT 'candidate',
+            source_path TEXT NOT NULL DEFAULT '',
+            supersedes_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+        with contextlib.closing(sqlite3.connect(self.db)) as conn:
+            conn.executescript(old_schema)
+
+        with contextlib.closing(taskctl.connect(self.db)) as conn:
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(experiences)").fetchall()}
+
+        self.assertIn("atom_type", columns)
+        self.assertIn("topics_json", columns)
+        self.assertIn("skills_json", columns)
+        self.assertIn("source_url_or_path", columns)
+        self.assertIn("source_command", columns)
+        self.assertIn("failure_signature", columns)
+        self.assertIn("conflicts_with_json", columns)
+        self.assertIn("stale_reason", columns)
+
+    def test_experience_add_records_atom_fields(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id)
+
+        self.run_cli(
+            "experience-add",
+            "--task-id",
+            str(task_id),
+            "--kind",
+            "pitfall",
+            "--title",
+            "macOS sandbox mismatch",
+            "--summary",
+            "The installed checker must run from the installed .claude path.",
+            "--evidence",
+            "installed test failure",
+            "--reuse",
+            "Check installed paths before release.",
+            "--confidence",
+            "4",
+            "--atom-type",
+            "pitfall",
+            "--topic",
+            "macos",
+            "--skill",
+            "skill-governance",
+            "--source-url-or-path",
+            "docs/SKILL_SOURCE_OF_TRUTH.md",
+            "--source-command",
+            "python .claude/scripts/skill_manifest_check.py",
+            "--failure-signature",
+            "FileNotFoundError: tools/skill_manifest_check.py",
+        )
+
+        payload = json.loads(self.run_cli("experience-list", "--status", "candidate", "--json"))
+        experience = payload["experiences"][0]
+
+        self.assertEqual(experience["atom_type"], "pitfall")
+        self.assertEqual(experience["topics"], ["macos"])
+        self.assertEqual(experience["skills"], ["skill-governance"])
+        self.assertEqual(experience["source_url_or_path"], "docs/SKILL_SOURCE_OF_TRUTH.md")
+        self.assertEqual(experience["source_command"], "python .claude/scripts/skill_manifest_check.py")
+        self.assertEqual(experience["failure_signature"], "FileNotFoundError: tools/skill_manifest_check.py")
+
+    def test_experience_sync_can_hide_accepted_low_confidence_items(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id)
+
+        low_output = self.run_cli(
+            "experience-add",
+            "--task-id",
+            str(task_id),
+            "--kind",
+            "pattern",
+            "--title",
+            "Low signal lesson",
+            "--summary",
+            "This weak lesson should stay out of the generated skill.",
+            "--confidence",
+            "2",
+        )
+        high_output = self.run_cli(
+            "experience-add",
+            "--task-id",
+            str(task_id),
+            "--kind",
+            "pattern",
+            "--title",
+            "High signal lesson",
+            "--summary",
+            "This strong lesson should appear in the generated skill.",
+            "--confidence",
+            "5",
+        )
+        low_id = int(low_output.split()[1])
+        high_id = int(high_output.split()[1])
+        self.run_cli("experience-accept", str(low_id), "--confidence", "2")
+        self.run_cli("experience-accept", str(high_id), "--confidence", "5")
+
+        skill_dir = Path(self.tmp.name) / "learned-experience"
+        self.run_cli(
+            "experience-sync-skill",
+            "--skill-dir",
+            str(skill_dir),
+            "--min-confidence",
+            "4",
+        )
+        index = (skill_dir / "references" / "experience-index.md").read_text(encoding="utf-8")
+
+        self.assertIn("High signal lesson", index)
+        self.assertNotIn("Low signal lesson", index)
+
+    def test_experience_stale_records_conflicting_evidence(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id)
+
+        old_output = self.run_cli(
+            "experience-add",
+            "--task-id",
+            str(task_id),
+            "--kind",
+            "pitfall",
+            "--title",
+            "Old path rule",
+            "--summary",
+            "Use the old source wrapper path.",
+        )
+        new_output = self.run_cli(
+            "experience-add",
+            "--task-id",
+            str(task_id),
+            "--kind",
+            "pitfall",
+            "--title",
+            "Installed path rule",
+            "--summary",
+            "Use the installed checker path.",
+        )
+        old_id = int(old_output.split()[1])
+        new_id = int(new_output.split()[1])
+        self.run_cli(
+            "experience-stale",
+            str(old_id),
+            "--reason",
+            "Installed target has no top-level tools directory.",
+            "--conflicts-with",
+            str(new_id),
+        )
+
+        payload = json.loads(self.run_cli("experience-list", "--status", "stale", "--json"))
+        stale = payload["experiences"][0]
+
+        self.assertEqual(stale["id"], old_id)
+        self.assertEqual(stale["stale_reason"], "Installed target has no top-level tools directory.")
+        self.assertEqual(stale["conflicts_with"], [new_id])
 
     def test_cancel_job_finishes_running_run_records(self) -> None:
         job_id = self.submit_job()

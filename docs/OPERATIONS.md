@@ -91,6 +91,27 @@ The checker verifies `.claude/skill-manifest.json`, published skill coverage,
 bucket rules, deterministic bridge paths, and plugin bridge/source content
 consistency.
 
+## Experience Atoms
+
+Record high-signal reusable lessons with atom metadata when it helps later
+search:
+
+```powershell
+python .claude\scripts\taskctl.py experience-add --task-id 1 --kind pitfall --title "Short title" --summary "What was learned" --atom-type pitfall --topic macos --skill skill-governance --source-command "command" --failure-signature "stable error text"
+```
+
+Hide accepted low-confidence lessons from generated skill indexes:
+
+```powershell
+python .claude\scripts\taskctl.py experience-sync-skill --min-confidence 4
+```
+
+Mark stale or conflicting lessons without deleting the historical row:
+
+```powershell
+python .claude\scripts\taskctl.py experience-stale 12 --reason "Contradicted by installed smoke" --conflicts-with 18
+```
+
 ## Upgrade A Target
 
 Re-run the installer against the same target:

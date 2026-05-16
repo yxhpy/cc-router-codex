@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.19`.
+Current release: `v0.1.20`.
 
 ## What It Does
 
@@ -29,6 +29,7 @@ and fast local checks before production work is allowed to finish.
 | Artifact quality | `taskctl audit --quality` checks supported Markdown reports for role-specific evidence structure. |
 | Project context | Workers read optional `CONTEXT.md` and `docs/adr/` when present; installers do not create them. |
 | Skill governance | `.claude/skill-manifest.json` and `tools/skill_manifest_check.py` prevent Claude/plugin skill drift. |
+| Experience atoms | `experience-add/list/sync` records atom metadata, filters low-confidence lessons, and marks stale conflicts. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -173,6 +174,16 @@ Bundled skills are governed by `.claude/skill-manifest.json`. Run
 `python tools/skill_manifest_check.py` to verify that every published skill is
 listed, draft/deprecated/private skills are not published, bridge paths are
 deterministic, and plugin mirrors match their source directories.
+
+## Experience Atoms
+
+Workers can attach optional atom metadata to reusable lessons:
+`--atom-type`, `--topic`, `--skill`, `--source-url-or-path`,
+`--source-command`, and `--failure-signature`. Accepted lessons still sync to
+the compact `learned-experience` skill; use
+`experience-sync-skill --min-confidence 4` to hide low-confidence accepted
+items from the generated index. Use `experience-stale` to mark lessons stale and
+record conflicting evidence.
 
 ## Asset Generation
 

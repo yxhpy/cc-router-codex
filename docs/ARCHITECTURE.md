@@ -108,6 +108,15 @@ and deterministic bridge paths such as `.claude/skills/<name>` and
 manifest, a non-distributable skill is published, bridge names drift, or plugin
 bridge contents differ from the source directory.
 
+## Experience Atoms
+
+Experience rows remain backward-compatible but include optional atom fields for
+topics, related skills, source command/path, failure signatures, stale reasons,
+and conflicting experience ids. `experience-list` can search atom metadata,
+`experience-sync-skill --min-confidence` filters weak accepted lessons out of
+generated skill indexes, and `experience-stale` preserves stale/conflict
+evidence without deleting history.
+
 ## Artifact Quality
 
 Default `taskctl audit` checks task status plus required artifact rows and

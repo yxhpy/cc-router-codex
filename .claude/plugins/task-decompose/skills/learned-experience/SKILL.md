@@ -19,3 +19,6 @@ python .claude/scripts/taskctl.py experience-list --query "<term>" --status acce
    artifacts, tests, and official docs override old lessons.
 4. If a lesson is wrong, stale, duplicate, or too broad, reject or supersede it
    through `taskctl.py` and rerun `experience-sync-skill`.
+5. Prefer high-confidence atom metadata for broad reuse. Use
+   `experience-sync-skill --min-confidence 4` when generating indexes that
+   should hide weak accepted lessons.

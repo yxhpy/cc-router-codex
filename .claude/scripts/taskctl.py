@@ -203,6 +203,14 @@ CREATE TABLE IF NOT EXISTS experiences (
     status TEXT NOT NULL DEFAULT 'candidate',
     source_path TEXT NOT NULL DEFAULT '',
     supersedes_id INTEGER REFERENCES experiences(id) ON DELETE SET NULL,
+    atom_type TEXT NOT NULL DEFAULT '',
+    topics_json TEXT NOT NULL DEFAULT '[]',
+    skills_json TEXT NOT NULL DEFAULT '[]',
+    source_url_or_path TEXT NOT NULL DEFAULT '',
+    source_command TEXT NOT NULL DEFAULT '',
+    failure_signature TEXT NOT NULL DEFAULT '',
+    conflicts_with_json TEXT NOT NULL DEFAULT '[]',
+    stale_reason TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -226,6 +234,17 @@ CREATE TABLE IF NOT EXISTS checkpoints (
 CREATE INDEX IF NOT EXISTS idx_checkpoints_job ON checkpoints(job_id);
 CREATE INDEX IF NOT EXISTS idx_checkpoints_created ON checkpoints(created_at);
 """
+
+EXPERIENCE_ATOM_COLUMNS = {
+    "atom_type": "TEXT NOT NULL DEFAULT ''",
+    "topics_json": "TEXT NOT NULL DEFAULT '[]'",
+    "skills_json": "TEXT NOT NULL DEFAULT '[]'",
+    "source_url_or_path": "TEXT NOT NULL DEFAULT ''",
+    "source_command": "TEXT NOT NULL DEFAULT ''",
+    "failure_signature": "TEXT NOT NULL DEFAULT ''",
+    "conflicts_with_json": "TEXT NOT NULL DEFAULT '[]'",
+    "stale_reason": "TEXT NOT NULL DEFAULT ''",
+}
 
 
 def now() -> str:
@@ -275,9 +294,13 @@ def connect(path_value: str | None = None) -> sqlite3.Connection:
     columns = {row["name"] for row in conn.execute("PRAGMA table_info(tasks)").fetchall()}
     if "required_artifacts_json" not in columns:
         conn.execute("ALTER TABLE tasks ADD COLUMN required_artifacts_json TEXT NOT NULL DEFAULT '[]'")
+    experience_columns = {row["name"] for row in conn.execute("PRAGMA table_info(experiences)").fetchall()}
+    for column, definition in EXPERIENCE_ATOM_COLUMNS.items():
+        if column not in experience_columns:
+            conn.execute(f"ALTER TABLE experiences ADD COLUMN {column} {definition}")
     conn.execute("PRAGMA busy_timeout = 30000")
     conn.execute("PRAGMA journal_mode = WAL")
-    conn.execute("PRAGMA user_version = 1")
+    conn.execute("PRAGMA user_version = 2")
     return conn
 
 
@@ -351,6 +374,15 @@ def normalize_tags(values: Iterable[str] | None) -> list[str]:
     return tags
 
 
+def normalize_ints(values: Iterable[int] | None) -> list[int]:
+    items: list[int] = []
+    for value in values or []:
+        item = int(value)
+        if item not in items:
+            items.append(item)
+    return items
+
+
 def task_id_shell_reference() -> tuple[str, str]:
     if os.name == "nt":
         return "PowerShell", "$env:TASKCTL_TASK_ID"
@@ -368,6 +400,9 @@ not record generic advice, secrets, credentials, or noisy observations.
 
 If useful, add one or more candidate lessons:
 {shell_label}: {script_command('taskctl.py')} experience-add --task-id {task_id_ref} --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact, file, command, or failure that proved it" --reuse "When and how to reuse it" --tag workflow --tag area
+
+Optional atom metadata can make lessons easier to search and safer to reuse:
+--atom-type pitfall --topic macos --skill skill-name --source-url-or-path docs/path.md --source-command "command that proved it" --failure-signature "stable error text"
 
 Use kind values such as pattern, pitfall, script, skill_fix, quality_rule,
 tooling, architecture, frontend, or testing. Keep each lesson concise. If no
@@ -1535,6 +1570,12 @@ def add_experience(args: argparse.Namespace) -> None:
         evidence = compact_text(args.evidence or "", 500)
         reuse_hint = compact_text(args.reuse or "", 500)
         source_path = compact_text(args.source_path or "", 260)
+        atom_type = compact_text(args.atom_type or "", 80)
+        topics = normalize_tags(args.topic)
+        skills = normalize_tags(args.skill)
+        source_url_or_path = compact_text(args.source_url_or_path or "", 500)
+        source_command = compact_text(args.source_command or "", 500)
+        failure_signature = compact_text(args.failure_signature or "", 500)
         tags = normalize_tags(args.tag)
         stamp = now()
         with conn:
@@ -1543,9 +1584,11 @@ def add_experience(args: argparse.Namespace) -> None:
                 INSERT INTO experiences(
                     job_id, task_id, workflow, role, kind, title, summary,
                     evidence, reuse_hint, tags_json, confidence, status,
-                    source_path, supersedes_id, created_at, updated_at
+                    source_path, supersedes_id, atom_type, topics_json,
+                    skills_json, source_url_or_path, source_command,
+                    failure_signature, created_at, updated_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     int(task["job_id"]),
@@ -1562,6 +1605,12 @@ def add_experience(args: argparse.Namespace) -> None:
                     status,
                     source_path,
                     args.supersedes,
+                    atom_type,
+                    json.dumps(topics, ensure_ascii=False),
+                    json.dumps(skills, ensure_ascii=False),
+                    source_url_or_path,
+                    source_command,
+                    failure_signature,
                     stamp,
                     stamp,
                 ),
@@ -1607,9 +1656,14 @@ def experience_query(args: argparse.Namespace) -> tuple[str, list[Any]]:
     if args.query:
         needle = f"%{args.query.lower()}%"
         clauses.append(
-            "(lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(reuse_hint) LIKE ? OR lower(tags_json) LIKE ?)"
+            "(lower(title) LIKE ? OR lower(summary) LIKE ? OR lower(reuse_hint) LIKE ? OR lower(tags_json) LIKE ? OR lower(topics_json) LIKE ? OR lower(skills_json) LIKE ? OR lower(failure_signature) LIKE ?)"
         )
-        values.extend([needle, needle, needle, needle])
+        values.extend([needle, needle, needle, needle, needle, needle, needle])
+    min_confidence = getattr(args, "min_confidence", None)
+    if min_confidence is not None:
+        floor = max(1, min(int(min_confidence), 5))
+        clauses.append("confidence >= ?")
+        values.append(floor)
     where = " WHERE " + " AND ".join(clauses) if clauses else ""
     return where, values
 
@@ -1635,7 +1689,16 @@ def experience_rows(conn: sqlite3.Connection, args: argparse.Namespace) -> list[
 def list_experiences(args: argparse.Namespace) -> None:
     with closing(connect(args.db)) as conn:
         rows = experience_rows(conn, args)
-    payload = [row_to_dict(row) | {"tags": parse_json_list(row["tags_json"])} for row in rows]
+    payload = [
+        row_to_dict(row)
+        | {
+            "tags": parse_json_list(row["tags_json"]),
+            "topics": parse_json_list(row["topics_json"]),
+            "skills": parse_json_list(row["skills_json"]),
+            "conflicts_with": parse_json_list(row["conflicts_with_json"]),
+        }
+        for row in rows
+    ]
     if args.json:
         print(json.dumps({"experiences": payload}, ensure_ascii=False, indent=2))
         return
@@ -1707,6 +1770,36 @@ def reject_experience(args: argparse.Namespace) -> None:
     print(f"EXPERIENCE {args.experience_id} rejected")
 
 
+def stale_experience(args: argparse.Namespace) -> None:
+    reason = compact_text(args.reason, 500)
+    conflicts = normalize_ints(args.conflicts_with)
+    with closing(connect(args.db)) as conn:
+        row = load_experience(conn, args.experience_id)
+        for conflict_id in conflicts:
+            load_experience(conn, conflict_id)
+        stamp = now()
+        with conn:
+            conn.execute(
+                """
+                UPDATE experiences
+                SET status = 'stale',
+                    stale_reason = ?,
+                    conflicts_with_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (reason, json.dumps(conflicts, ensure_ascii=False), stamp, args.experience_id),
+            )
+            emit_event(
+                conn,
+                "experience_stale",
+                reason or row["title"],
+                job_id=row["job_id"],
+                task_id=row["task_id"],
+            )
+    print(f"EXPERIENCE {args.experience_id} stale")
+
+
 def prune_experiences(args: argparse.Namespace) -> None:
     statuses = args.status or ["rejected", "superseded", "stale"]
     bad_statuses = [status for status in statuses if status not in EXPERIENCE_STATUSES]
@@ -1750,6 +1843,9 @@ Use this skill as a retrieval entrypoint, not as a rulebook.
    artifacts, tests, and official docs override old lessons.
 4. If a lesson is wrong, stale, duplicate, or too broad, reject or supersede it
    through `taskctl.py` and rerun `experience-sync-skill`.
+5. Prefer high-confidence atom metadata for broad reuse. Use
+   `experience-sync-skill --min-confidence 4` when generating indexes that
+   should hide weak accepted lessons.
 """
 
     lines = [
@@ -1764,6 +1860,8 @@ Use this skill as a retrieval entrypoint, not as a rulebook.
     current_group = ""
     for row in rows:
         tags = ", ".join(parse_json_list(row["tags_json"])) or "-"
+        topics = ", ".join(parse_json_list(row["topics_json"])) or ""
+        skills = ", ".join(parse_json_list(row["skills_json"])) or ""
         group = f"{row['workflow']} / {row['role']}"
         if group != current_group:
             current_group = group
@@ -1777,10 +1875,22 @@ Use this skill as a retrieval entrypoint, not as a rulebook.
                 f"- Summary: {row['summary']}",
             ]
         )
+        if row["atom_type"]:
+            lines.append(f"- Atom type: {row['atom_type']}")
+        if topics:
+            lines.append(f"- Topics: {topics}")
+        if skills:
+            lines.append(f"- Skills: {skills}")
         if row["reuse_hint"]:
             lines.append(f"- Reuse: {row['reuse_hint']}")
         if row["evidence"]:
             lines.append(f"- Evidence: {row['evidence']}")
+        if row["source_url_or_path"]:
+            lines.append(f"- Source URL/path: {row['source_url_or_path']}")
+        if row["source_command"]:
+            lines.append(f"- Source command: {row['source_command']}")
+        if row["failure_signature"]:
+            lines.append(f"- Failure signature: {row['failure_signature']}")
         if row["source_path"]:
             lines.append(f"- Source: {row['source_path']}")
         lines.append("")
@@ -1805,6 +1915,7 @@ def sync_experience_skill(args: argparse.Namespace) -> None:
         kind=None,
         tag=None,
         query=None,
+        min_confidence=args.min_confidence,
         limit=args.limit,
     )
     with closing(connect(args.db)) as conn:
@@ -2522,6 +2633,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--tag", action="append")
     p.add_argument("--confidence", type=int, default=3)
     p.add_argument("--source-path", default="")
+    p.add_argument("--atom-type", default="")
+    p.add_argument("--topic", action="append")
+    p.add_argument("--skill", action="append")
+    p.add_argument("--source-url-or-path", default="")
+    p.add_argument("--source-command", default="")
+    p.add_argument("--failure-signature", default="")
     p.add_argument("--supersedes", type=int)
     p.set_defaults(func=add_experience)
 
@@ -2534,6 +2651,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--status", action="append", choices=sorted(EXPERIENCE_STATUSES), help="default: accepted")
     p.add_argument("--tag", action="append")
     p.add_argument("--query")
+    p.add_argument("--min-confidence", type=int)
     p.add_argument("--limit", type=int, default=40)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=list_experiences)
@@ -2550,6 +2668,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--reason", required=True)
     p.set_defaults(func=reject_experience)
 
+    p = sub.add_parser("experience-stale", help="mark an experience stale with conflicting evidence")
+    p.add_argument("experience_id", type=int)
+    p.add_argument("--reason", required=True)
+    p.add_argument("--conflicts-with", type=int, action="append")
+    p.set_defaults(func=stale_experience)
+
     p = sub.add_parser("experience-prune", help="delete rejected, superseded, or stale experiences")
     p.add_argument("--status", action="append", choices=sorted(EXPERIENCE_STATUSES), help="default: rejected, superseded, stale")
     p.set_defaults(func=prune_experiences)
@@ -2557,6 +2681,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("experience-sync-skill", help="regenerate the compact learned-experience skill from accepted experiences")
     p.add_argument("--skill-dir")
     p.add_argument("--workflow")
+    p.add_argument("--min-confidence", type=int, default=1)
     p.add_argument("--limit", type=int, default=80)
     p.add_argument("--no-plugin-mirror", action="store_true")
     p.add_argument("--dry-run", action="store_true")

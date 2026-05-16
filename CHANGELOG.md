@@ -6,6 +6,22 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.20 - 2026-05-16
+
+- Added optional atom metadata fields to experiences:
+  `atom_type`, `topics_json`, `skills_json`, `source_url_or_path`,
+  `source_command`, `failure_signature`, `conflicts_with_json`, and
+  `stale_reason`.
+- Added backward-compatible experience table migration for existing local
+  taskctl databases.
+- Extended `experience-add` and `experience-list` to record and return atom
+  metadata.
+- Added `experience-sync-skill --min-confidence` so accepted low-confidence
+  lessons can be hidden from generated learned-experience indexes.
+- Added `experience-stale` for stale/conflicting evidence handling.
+- Added regression coverage for old DB migration, atom metadata, low-confidence
+  filtering, and stale conflict records.
+
 ## 0.1.19 - 2026-05-16
 
 - Fixed installed `test_skill_manifest_check.py` so it imports the installed
