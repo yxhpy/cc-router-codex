@@ -66,6 +66,12 @@ example, `assetgen` can produce image files, manifests, and asset briefs, but it
 cannot silently become a product-code writer. Product work must use the
 appropriate role and artifact contract.
 
+Operational and governance roles are intentionally separate from product-code
+implementation: `debugger` diagnoses failures, `operator` owns install/build/CI
+and runtime operations, `security` audits risk, `docs` writes documentation, and
+`release` owns versioning and release verification. `fullstack` remains the only
+role allowed to create or modify product implementation code.
+
 ## Failure Model
 
 The control plane prefers explicit blocking over silent fallback:

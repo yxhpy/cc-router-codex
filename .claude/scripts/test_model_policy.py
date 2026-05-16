@@ -43,6 +43,21 @@ class ModelPolicyTests(unittest.TestCase):
         self.assertEqual(choice.reasoning_effort, "medium")
         self.assertEqual(choice.source, "role:assetgen")
 
+    def test_specialized_roles_have_model_policy_entries(self) -> None:
+        expected = {
+            "debugger": ("gpt-5.5", "high"),
+            "operator": ("gpt-5.4", "medium"),
+            "security": ("gpt-5.5", "high"),
+            "docs": ("gpt-5.4", "medium"),
+            "release": ("gpt-5.4", "medium"),
+        }
+        for role, (model, effort) in expected.items():
+            with self.subTest(role=role):
+                choice = model_policy.select_model("general", role, model_policy.FALLBACK_POLICY)
+                self.assertEqual(choice.model, model)
+                self.assertEqual(choice.reasoning_effort, effort)
+                self.assertEqual(choice.source, f"role:{role}")
+
     def test_env_overrides_are_visible_without_losing_policy_source(self) -> None:
         choice = model_policy.ModelChoice("gpt-5.5", "high", "role:reviewer", "review")
         resolved = model_policy.apply_env_overrides(

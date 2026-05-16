@@ -40,7 +40,15 @@ skill invocation.
    produces requirements and acceptance checks only. `uiux` produces design
    artifacts only and must not create product code files. `prototype` produces
    prototype specs and interaction contracts only. `assetgen` produces local
-   image assets, asset briefs, and asset manifests only. `fullstack` is the
+   image assets, asset briefs, and asset manifests only. `debugger` produces
+   reproduction notes, log analysis, root-cause reports, and minimal fix
+   recommendations only. `operator` handles installs, dependencies, builds,
+   CI, Docker, packaging, deploys, runtime health, and operational runbooks
+   only. `security` produces security reviews, threat models, dependency
+   audits, permission analyses, and remediation plans only. `docs` produces
+   documentation, runbooks, API notes, README material, and changelog prose
+   only. `release` owns versioning, release notes, tags, install verification,
+   rollback notes, and release audit artifacts only. `fullstack` is the
    only role allowed to create or modify production implementation code.
    `tester` may produce reports, screenshots, and test files under test paths,
    but no production source edits. `reviewer` produces review findings only.
@@ -64,7 +72,8 @@ skill invocation.
    project asset directory and record a `local_asset_manifest`; do not leave
    remote hotlinks or blank placeholders as the production asset path.
 10. Codex workers own planning, divergence, requirements, prototype, UI/UX,
-    asset generation, full-stack work, tests, review, and closure.
+    asset generation, debugging, operations, security, documentation, release,
+    full-stack work, tests, review, and closure.
     New control-plane behavior belongs in focused `.claude/scripts/` modules;
     do not add unrelated responsibilities to the legacy `taskctl.py` monolith.
 11. `capability` automatically applies `.claude/model_policy.json`; ds v4 should

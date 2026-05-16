@@ -88,6 +88,34 @@ class TaskCtlTests(unittest.TestCase):
         self.assertEqual(payload["tasks"], [])
         self.assertEqual(payload["progress"]["total"], 0)
 
+    def test_specialized_nonimplementation_roles_are_cli_accepted(self) -> None:
+        examples = {
+            "debugger": ("Diagnose failure", "Reproduce the failure, inspect logs, and record the debug_report artifact.", "debug_report:.claude/artifacts/debug_report.md"),
+            "operator": ("Verify install", "Run operational install checks and record the ops_report artifact.", "ops_report:.claude/artifacts/ops_report.md"),
+            "security": ("Audit permissions", "Review permission boundaries and record the security_report artifact.", "security_report:.claude/artifacts/security_report.md"),
+            "docs": ("Write runbook", "Write documentation notes and record the doc artifact.", "doc:.claude/artifacts/runbook.md"),
+            "release": ("Prepare release", "Prepare release notes and record the release_notes artifact.", "release_notes:.claude/artifacts/release_notes.md"),
+        }
+        for role, (title, prompt, artifact) in examples.items():
+            with self.subTest(role=role):
+                job_id = self.submit_job()
+                output = self.run_cli(
+                    "enqueue",
+                    str(job_id),
+                    "--role",
+                    role,
+                    "--title",
+                    title,
+                    "--prompt",
+                    prompt,
+                    "--required-artifact",
+                    artifact,
+                )
+                task_id = int(output.split()[1])
+                payload = json.loads(self.run_cli("status", str(job_id), "--json"))
+                task = next(item for item in payload["tasks"] if item["id"] == task_id)
+                self.assertEqual(task["role"], role)
+
     def test_enqueue_filters_and_allows_only_one_active_step(self) -> None:
         job_id = self.submit_job()
         first_id = self.enqueue_step(job_id)

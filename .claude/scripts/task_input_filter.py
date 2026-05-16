@@ -20,6 +20,11 @@ ALLOWED_ROLES = {
     "prototype",
     "uiux",
     "assetgen",
+    "debugger",
+    "operator",
+    "security",
+    "docs",
+    "release",
     "fullstack",
     "tester",
     "reviewer",
@@ -63,7 +68,21 @@ IMAGE_ASSET_EXTENSIONS = {
 PRODUCT_CODE_KINDS = {"html", "css", "js", "javascript", "typescript", "code", "source", "implementation"}
 ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
 ASSETGEN_DOCUMENT_KINDS = {"asset_generation_brief", "local_asset_manifest"}
-NON_IMPLEMENTATION_ROLES = {"planner", "divergent", "requirements", "uiux", "prototype", "assetgen", "reviewer", "closer"}
+NON_IMPLEMENTATION_ROLES = {
+    "planner",
+    "divergent",
+    "requirements",
+    "uiux",
+    "prototype",
+    "assetgen",
+    "debugger",
+    "operator",
+    "security",
+    "docs",
+    "release",
+    "reviewer",
+    "closer",
+}
 FRONTEND_CODE_EXTENSIONS = {".html", ".htm", ".css", ".scss", ".sass", ".less", ".js", ".jsx", ".ts", ".tsx", ".vue", ".svelte"}
 FRONTEND_ARTIFACT_KINDS = {"html", "css", "js", "javascript", "typescript", "frontend", "ui", "source", "code"}
 DESIGN_SOURCE_MARKERS = (

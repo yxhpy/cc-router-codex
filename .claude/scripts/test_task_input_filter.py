@@ -196,7 +196,21 @@ class TaskInputFilterTests(unittest.TestCase):
         self.assertTrue(any("role prototype" in item for item in result.violations))
 
     def test_non_implementation_roles_all_block_product_code_artifacts(self) -> None:
-        for role in ("planner", "divergent", "requirements", "uiux", "prototype", "assetgen", "reviewer", "closer"):
+        for role in (
+            "planner",
+            "divergent",
+            "requirements",
+            "uiux",
+            "prototype",
+            "assetgen",
+            "debugger",
+            "operator",
+            "security",
+            "docs",
+            "release",
+            "reviewer",
+            "closer",
+        ):
             with self.subTest(role=role):
                 result = task_input_filter.validate_task_input(
                     role,
@@ -207,8 +221,8 @@ class TaskInputFilterTests(unittest.TestCase):
                 self.assertFalse(result.passed)
                 self.assertTrue(any(f"role {role}" in item for item in result.violations))
 
-    def test_analysis_roles_block_implementation_without_file_path(self) -> None:
-        for role in ("planner", "divergent", "requirements", "reviewer", "closer"):
+    def test_non_implementation_roles_block_implementation_without_file_path(self) -> None:
+        for role in ("planner", "divergent", "requirements", "debugger", "operator", "security", "docs", "release", "reviewer", "closer"):
             with self.subTest(role=role):
                 with mock.patch.dict(
                     os.environ,
@@ -265,6 +279,11 @@ class TaskInputFilterTests(unittest.TestCase):
             "planner": ("Create implementation plan", "Create an implementation plan artifact.", "implementation_plan:.claude/artifacts/plan.md"),
             "divergent": ("Compare options", "Analyze implementation options and record the option analysis.", "option_analysis:.claude/artifacts/options.md"),
             "requirements": ("Define acceptance", "Define acceptance checklist and record requirements.", "acceptance_checklist:.claude/artifacts/acceptance.md"),
+            "debugger": ("Diagnose startup failure", "Reproduce the startup failure, inspect logs, and record root-cause notes.", "debug_report:.claude/artifacts/debug_report.md"),
+            "operator": ("Verify install flow", "Run install verification steps and record the operational health report.", "ops_report:.claude/artifacts/ops_report.md"),
+            "security": ("Review permissions", "Review permission boundaries and record security findings.", "security_report:.claude/artifacts/security_report.md"),
+            "docs": ("Update runbook", "Update the operational runbook material and record documentation notes.", "doc:.claude/artifacts/runbook.md"),
+            "release": ("Prepare release notes", "Prepare release notes, version audit, and rollback notes.", "release_notes:.claude/artifacts/release_notes.md"),
             "reviewer": ("Review quality", "Review the implementation summary and record findings.", "quality_review:.claude/artifacts/review.md"),
             "closer": ("Close task", "Create closure report from audit results.", "closure_report:.claude/artifacts/closure.md"),
             "prototype": ("Write prototype spec", "Create prototype specification with DOM hooks and interaction contract.", "prototype_spec:.claude/artifacts/prototype.md"),

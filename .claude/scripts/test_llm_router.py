@@ -15,6 +15,16 @@ import route_cache
 
 
 class LlmRouterTests(unittest.TestCase):
+    def test_specialized_roles_are_in_router_schema(self) -> None:
+        role_enum = set(llm_router.ROUTER_SCHEMA["properties"]["role"]["enum"])
+        suggested_enum = set(llm_router.TASK_INPUT_GUARD_SCHEMA["properties"]["suggested_role"]["enum"])
+
+        for role in ("debugger", "operator", "security", "docs", "release"):
+            with self.subTest(role=role):
+                self.assertIn(role, llm_router.ROLES)
+                self.assertIn(role, role_enum)
+                self.assertIn(role, suggested_enum)
+
     def test_normalizes_artifact_objects_from_provider(self) -> None:
         route = llm_router.route_from_payload(
             {

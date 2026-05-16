@@ -32,6 +32,11 @@ ROLES = {
     "prototype",
     "uiux",
     "assetgen",
+    "debugger",
+    "operator",
+    "security",
+    "docs",
+    "release",
     "fullstack",
     "tester",
     "reviewer",
@@ -116,9 +121,9 @@ ROUTER_SCHEMA: dict[str, Any] = {
 
 ROUTER_SYSTEM_PROMPT = """You are the taskctl routing classifier. Return exactly one JSON object matching the schema: production_work, role, title, worker_prompt, artifacts, steps, reason, confidence.
 
-Set production_work=false for conversation, status questions, explanation-only requests, or requests that do not require project artifacts. Set production_work=true for requests to create, modify, verify, review, plan, design, or close project work.
+Set production_work=false for conversation, status questions, explanation-only requests, or requests that do not require project artifacts. Set production_work=true for requests to create, modify, verify, review, plan, design, diagnose, operate, secure, document, release, or close project work.
 
-Choose roles by responsibility: planner for plans and architecture notes, divergent for options and tradeoffs, requirements for acceptance criteria, uiux for design artifacts, prototype for specs and interaction contracts, assetgen for local image asset generation or placement, fullstack for production implementation, tester for reports/screenshots/test files, reviewer for findings, closer for closure summaries.
+Choose roles by responsibility: planner for plans and architecture notes, divergent for options and tradeoffs, requirements for acceptance criteria, uiux for design artifacts, prototype for specs and interaction contracts, assetgen for local image asset generation or placement, debugger for reproduction/log analysis/root-cause reports, operator for installs/dependencies/CI/Docker/packaging/deploy/runtime health, security for security reviews/threat models/dependency audits/permission analysis, docs for README/runbooks/API notes/changelog prose, release for versioning/tags/release notes/install verification/rollback notes, fullstack for production implementation, tester for reports/screenshots/test files, reviewer for findings, closer for closure summaries.
 
 Artifacts must be strings in kind:path format, never objects. Use neutral examples such as html:sample-page.html, source:src/app.ts, image:assets/generated/sword.png, local_asset_manifest:assets/generated/manifest.json, test_report:.claude/artifacts/test_report.md.
 
@@ -141,6 +146,11 @@ Role boundaries:
 - uiux: design artifacts only; no production code files.
 - prototype: prototype specs, DOM hooks, and interaction contracts only; no production UI code.
 - assetgen: local image assets only, including game sprites/icons/textures, web visuals, video thumbnails/key art/overlays, asset_generation_brief, and local_asset_manifest; no product code files.
+- debugger: reproduction, logs, root-cause analysis, and minimal fix recommendations only; no product code patches.
+- operator: installs, dependencies, builds, CI, Docker, packaging, deploys, runtime health checks, and operational runbooks; no product source edits.
+- security: security reviews, threat models, dependency audits, permission analyses, and remediation plans only; no product code patches.
+- docs: documentation, runbooks, API notes, README material, and changelog prose only; no product source edits.
+- release: versioning, CHANGELOG/release notes, tags, release packaging, install verification, rollback notes, and release audit artifacts; no product source edits.
 - fullstack: production implementation code and scripts.
 - tester: reports, screenshots, and test files under test paths; no production source edits.
 - reviewer: review findings only.

@@ -46,6 +46,31 @@
       "reasoning_effort": "medium",
       "why": "Image generation now uses local MCP prompt-template retrieval before handing a focused prompt to the raster backend; gpt-5.4-mini is sufficient for this bounded adapter step."
     },
+    "debugger": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Root-cause isolation needs strong reasoning over logs, symptoms, and minimal reproduction paths without editing product code."
+    },
+    "operator": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "why": "Operational installs, builds, CI, Docker, packaging, and health checks need reliable tool use with moderate reasoning risk."
+    },
+    "security": {
+      "model": "gpt-5.5",
+      "reasoning_effort": "high",
+      "why": "Security review and permission analysis require conservative high-quality reasoning."
+    },
+    "docs": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "why": "Documentation work benefits from capable synthesis but should stay lower-risk than implementation."
+    },
+    "release": {
+      "model": "gpt-5.4",
+      "reasoning_effort": "medium",
+      "why": "Release work is operational and audit-heavy, with moderate reasoning needs and no product-code patch authority."
+    },
     "fullstack": {
       "model": "gpt-5.5",
       "reasoning_effort": "high",

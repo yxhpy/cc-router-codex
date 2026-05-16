@@ -4,8 +4,9 @@ taskctl.py - Python/SQLite control plane for Codex worker tasks.
 
 The main model only submits and monitors jobs. Planning, divergence,
 requirements, prototype, UI/UX, asset generation, full-stack implementation,
-testing, review, and closure are represented as worker tasks stored in SQLite
-and executed by Codex through this controller.
+debugging, operations, security, documentation, release, testing, review, and
+closure are represented as worker tasks stored in SQLite and executed by Codex
+through this controller.
 """
 
 from __future__ import annotations
@@ -40,6 +41,11 @@ ROLES = (
     "prototype",
     "uiux",
     "assetgen",
+    "debugger",
+    "operator",
+    "security",
+    "docs",
+    "release",
     "fullstack",
     "tester",
     "reviewer",
@@ -76,6 +82,11 @@ ROLE_BOUNDARIES = {
     "uiux": "Produce design artifacts only, such as style inventory, design reference selection, component map, style contract, or visual review notes. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "prototype": "Produce prototype specifications, DOM/interaction contracts, and behavior notes only. Do not create production UI code.",
     "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py. That script must fast-check/install the local image-2-prompt MCP, compare installed/latest MCP git commit versions and warn if an upgrade may be needed, retrieve prompt templates, and use gpt-5.4-mini before raster generation. Assetgen covers game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
+    "debugger": "Reproduce failures, inspect logs, isolate root cause, and produce debugging reports or minimal fix recommendations only. Do not patch product code.",
+    "operator": "Handle installs, dependencies, builds, CI, Docker, packaging, deploys, runtime health, and operational runbooks. Do not create or modify product source code.",
+    "security": "Produce security reviews, threat models, dependency audits, permission analyses, and remediation plans only. Do not patch product code.",
+    "docs": "Create or update documentation, runbooks, API notes, README material, and changelog prose only. Do not modify product source code.",
+    "release": "Own versioning, CHANGELOG/release notes, tags, release packaging, install verification, rollback notes, and release audit artifacts. Do not patch product source code.",
     "fullstack": "You may create or modify product implementation code for frontend, backend, database, scripts, and production HTML as requested.",
     "tester": "Produce verification reports, screenshots, and test files under test paths only. Do not modify production source files.",
     "reviewer": "Produce review findings and risk reports only. Do not patch product code.",

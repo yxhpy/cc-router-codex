@@ -6,6 +6,12 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.10 - 2026-05-16
+
+- Added focused non-implementation roles for `debugger`, `operator`,
+  `security`, `docs`, and `release`, with routing schemas, role boundaries,
+  model policy entries, and input-filter coverage.
+
 ## 0.1.9 - 2026-05-16
 
 - Added a hybrid Bash write guard: deterministic direct-write patterns still
