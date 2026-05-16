@@ -65,6 +65,13 @@ retry attempts were made. Use `audit --quality` when a job records
 report-style Markdown artifacts and you need to distinguish a present but weak
 report from a missing artifact.
 
+## Optional Project Context
+
+`CONTEXT.md` and `docs/adr/` are optional project-owned docs. The installer does
+not create them. When present, worker prompts ask Codex to read them before
+choosing vocabulary, naming, or architecture decisions. Create or update them
+only through an explicit docs capability requested by the user.
+
 ## Upgrade A Target
 
 Re-run the installer against the same target:

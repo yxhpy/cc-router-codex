@@ -229,6 +229,8 @@ Tests:
 Goal: improve worker alignment without forcing every repo to adopt a heavy
 process.
 
+Status: implemented in `v0.1.16`.
+
 Changes:
 
 - Add docs explaining optional `CONTEXT.md` and `docs/adr/` usage.

@@ -214,6 +214,43 @@ class TaskCtlTests(unittest.TestCase):
         self.assertNotIn("python .claude/scripts/taskctl.py artifact", row["prompt"])
         self.assertNotIn("python .claude/scripts/taskctl.py experience-add", row["prompt"])
 
+    def test_worker_prompt_includes_project_context_soft_contract(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id)
+
+        with contextlib.closing(taskctl.connect(self.db)) as conn:
+            row = conn.execute("SELECT prompt FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+        self.assertIn("[TASKCTL PROJECT CONTEXT]", row["prompt"])
+        self.assertIn("If CONTEXT.md exists", row["prompt"])
+        self.assertIn("If docs/adr/ exists", row["prompt"])
+        self.assertIn("soft inputs", row["prompt"])
+        self.assertIn("Do not create CONTEXT.md or docs/adr/", row["prompt"])
+
+    def test_docs_role_prompt_includes_explicit_context_and_adr_template(self) -> None:
+        job_id = self.submit_job()
+        output = self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "docs",
+            "--title",
+            "Document project context",
+            "--prompt",
+            "Create the requested project context documentation and record the context_doc artifact.",
+            "--required-artifact",
+            "context_doc:.claude/artifacts/context_doc.md",
+        )
+        task_id = int(output.split()[1])
+
+        with contextlib.closing(taskctl.connect(self.db)) as conn:
+            row = conn.execute("SELECT prompt FROM tasks WHERE id = ?", (task_id,)).fetchone()
+
+        self.assertIn("[TASKCTL PROJECT CONTEXT TEMPLATE]", row["prompt"])
+        self.assertIn("Only create or update CONTEXT.md", row["prompt"])
+        self.assertIn("only when the user explicitly requested it", row["prompt"])
+        self.assertIn("docs/adr/YYYY-MM-DD-short-title.md", row["prompt"])
+
     def test_artifact_footer_uses_current_platform_shell_syntax(self) -> None:
         footer = taskctl.artifact_contract_footer(["image:assets/generated/hero.png"])
 

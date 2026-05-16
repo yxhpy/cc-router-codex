@@ -84,6 +84,17 @@ into a durable Markdown snapshot plus a SQLite row; `checkpoint-restore` brings
 it back in a later session, and `checkpoint-report` merges multiple checkpoints
 for handoff or closure.
 
+## Project Context
+
+Worker prompts include a soft contract for optional `CONTEXT.md` and
+`docs/adr/`. If those files exist, workers use them for vocabulary, naming,
+architecture, persistence, API, deployment, dependency, storage, and
+hard-to-reverse decisions. If they are absent, workers continue from repository
+evidence.
+
+The installer never creates or copies `CONTEXT.md` or `docs/adr/`; they are
+project-owned docs created only through explicit documentation work.
+
 ## Artifact Quality
 
 Default `taskctl audit` checks task status plus required artifact rows and

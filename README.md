@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.15`.
+Current release: `v0.1.16`.
 
 ## What It Does
 
@@ -27,6 +27,7 @@ and fast local checks before production work is allowed to finish.
 | Command catalog | `taskctl command` and `taskctl doctor` print exact local commands so Claude does not need to guess syntax. |
 | Failure resume | `taskctl checkpoint-*` saves, restores, lists, and reports resumable job state after failed or blocked work. |
 | Artifact quality | `taskctl audit --quality` checks supported Markdown reports for role-specific evidence structure. |
+| Project context | Workers read optional `CONTEXT.md` and `docs/adr/` when present; installers do not create them. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -157,6 +158,13 @@ and next command.
 artifacts produced by `debugger`, `planner`, `uiux`, `reviewer`, and `closer`.
 Default `audit` remains a presence check for compatibility.
 
+## Project Context
+
+Projects may opt in to `CONTEXT.md` for domain vocabulary and `docs/adr/` for
+architecture decisions. Worker prompts treat both as soft inputs: use them when
+present, continue when absent, and do not create them unless the user
+explicitly asks for project-context or ADR documentation.
+
 ## Asset Generation
 
 Asset generation uses `.claude/scripts/assetgen_exec.py`. Before Codex creates
@@ -217,6 +225,7 @@ installer rewriting, policy checks, and Python compilation.
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Operations](docs/OPERATIONS.md)
+- [Project Context](docs/PROJECT_CONTEXT.md)
 - [Versioning](VERSIONING.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

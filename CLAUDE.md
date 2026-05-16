@@ -140,6 +140,17 @@ semantic role-boundary judgment:
   raster-generation prompt. Product pages should reference those local files
   only.
 
+## Project Context
+
+- `CONTEXT.md` is an optional project glossary/context file. Use it when
+  present before choosing domain vocabulary, naming, or user-facing language.
+- `docs/adr/` is an optional ADR directory. Check relevant ADRs when present
+  before architecture, persistence, API, dependency, deployment, storage, or
+  hard-to-reverse naming decisions.
+- Absence of these files is not a blocker. Continue from repository evidence.
+- Do not create `CONTEXT.md` or `docs/adr/` unless the user explicitly asks for
+  project context docs, a glossary, or an ADR.
+
 ## Completion Rules
 
 - A task is not successful just because Codex exits successfully. Required

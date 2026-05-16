@@ -87,6 +87,9 @@ def make_source(root: Path) -> Path:
         encoding="utf-8",
     )
     (source / "CLAUDE.md").write_text("# Rules\n", encoding="utf-8")
+    (source / "CONTEXT.md").write_text("# Project Context\n", encoding="utf-8")
+    (source / "docs" / "adr").mkdir(parents=True)
+    (source / "docs" / "adr" / "2026-05-16-sample.md").write_text("# ADR\n", encoding="utf-8")
     (source / "VERSION").write_text("0.1.0\n", encoding="utf-8")
     (source / "VERSIONING.md").write_text("# Versioning\n", encoding="utf-8")
     return source
@@ -106,6 +109,8 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(result.target, target.resolve())
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertFalse((target / "CONTEXT.md").exists())
+            self.assertFalse((target / "docs" / "adr").exists())
             self.assertTrue((target / "VERSION").exists())
             self.assertTrue((target / "VERSIONING.md").exists())
             self.assertFalse((target / ".claude" / "task-plans" / "route-cache.json").exists())

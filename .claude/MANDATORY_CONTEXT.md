@@ -119,6 +119,12 @@ skill invocation.
     cached resources when no upstream refresh is needed.
     Generated bitmap assets are allowed when they are recorded as local files
     and trace back to an `asset_generation_brief` or project design source.
+17a. `CONTEXT.md` and `docs/adr/` are optional project-owned soft inputs.
+    Workers should read them when present before vocabulary, naming,
+    architecture, persistence, API, deployment, dependency, storage, or
+    hard-to-reverse decisions. Their absence is not a blocker. Do not create
+    these files unless the user explicitly asks for project context docs or an
+    ADR.
 18. Before reporting completion, run `taskctl.py audit <job_id>` and report
     missing artifacts or failed gates instead of claiming closure. For
     report-style Markdown artifacts from `debugger`, `planner`, `uiux`,

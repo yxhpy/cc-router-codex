@@ -6,6 +6,18 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.16 - 2026-05-16
+
+- Added a worker prompt soft contract for optional `CONTEXT.md` and
+  `docs/adr/` sources so workers read them when present without blocking when
+  absent.
+- Added a docs-role template for explicitly requested project context and ADR
+  documentation, with guardrails against creating those files as a side effect.
+- Added `docs/PROJECT_CONTEXT.md` to document the optional glossary and ADR
+  convention.
+- Added installer regression coverage proving `CONTEXT.md` and `docs/adr/`
+  are not created or copied during install.
+
 ## 0.1.15 - 2026-05-16
 
 - Added `.claude/scripts/artifact_quality.py` with role-specific Markdown

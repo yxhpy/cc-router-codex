@@ -75,6 +75,8 @@ EXPERIENCE_STATUSES = {
 EXPERIENCE_FOOTER_MARKER = "[TASKCTL EXPERIENCE CAPTURE]"
 ROLE_BOUNDARY_MARKER = "[TASKCTL ROLE BOUNDARY]"
 FRONTEND_DESIGN_MARKER = "[TASKCTL FRONTEND DESIGN SOURCE]"
+PROJECT_CONTEXT_MARKER = "[TASKCTL PROJECT CONTEXT]"
+PROJECT_CONTEXT_TEMPLATE_MARKER = "[TASKCTL PROJECT CONTEXT TEMPLATE]"
 REQUIRED_ARTIFACT_MARKER = "[TASKCTL REQUIRED ARTIFACTS]"
 ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
 ASSETGEN_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -434,6 +436,39 @@ source traceability is mandatory:
 """
 
 
+def project_context_footer() -> str:
+    return f"""
+
+{PROJECT_CONTEXT_MARKER}
+Optional project context sources are soft inputs:
+- If CONTEXT.md exists, read it before choosing project vocabulary, domain
+  terms, naming, or user-facing language.
+- If docs/adr/ exists, check relevant ADRs before architecture, persistence,
+  API, dependency, storage, deployment, or hard-to-reverse naming decisions.
+- Treat these files as guidance, not a blocker. If they are absent, continue
+  with the task using current repository evidence.
+- Do not create CONTEXT.md or docs/adr/ unless the user explicitly requested
+  project context documentation or an ADR.
+"""
+
+
+def project_context_template_footer(role: str) -> str:
+    if role != "docs":
+        return ""
+    return f"""
+
+{PROJECT_CONTEXT_TEMPLATE_MARKER}
+Only create or update CONTEXT.md or docs/adr/ files when the user explicitly requested it.
+This template applies only when the user explicitly requested it.
+When requested, use these lightweight shapes:
+- CONTEXT.md: project purpose, domain vocabulary, naming conventions,
+  important user/workflow terms, and links to authoritative docs.
+- docs/adr/YYYY-MM-DD-short-title.md: status, context, decision,
+  consequences, alternatives considered, and verification evidence.
+Do not create these files as a side effect of unrelated documentation work.
+"""
+
+
 def required_artifact_kinds_for_workflow(workflow: str) -> tuple[str, ...]:
     _ = workflow
     return ()
@@ -506,6 +541,10 @@ def attach_task_footers(prompt: str, role: str, required_artifacts: Iterable[str
         body += role_boundary_footer(role)
     if FRONTEND_DESIGN_MARKER not in body:
         body += frontend_design_footer()
+    if PROJECT_CONTEXT_MARKER not in body:
+        body += project_context_footer()
+    if PROJECT_CONTEXT_TEMPLATE_MARKER not in body:
+        body += project_context_template_footer(role)
     body += artifact_contract_footer(required_artifacts)
     return attach_experience_footer(body)
 
