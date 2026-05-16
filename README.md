@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.14`.
+Current release: `v0.1.15`.
 
 ## What It Does
 
@@ -26,6 +26,7 @@ and fast local checks before production work is allowed to finish.
 | Focus guard | `Stop` blocks final answers until the active goal is marked complete or exhausted with evidence. |
 | Command catalog | `taskctl command` and `taskctl doctor` print exact local commands so Claude does not need to guess syntax. |
 | Failure resume | `taskctl checkpoint-*` saves, restores, lists, and reports resumable job state after failed or blocked work. |
+| Artifact quality | `taskctl audit --quality` checks supported Markdown reports for role-specific evidence structure. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -145,11 +146,16 @@ current state before retrying:
 python .claude/scripts/taskctl.py checkpoint-save --job-id 1 --title "Resume blocked implementation"
 python .claude/scripts/taskctl.py checkpoint-restore 1 --json
 python .claude/scripts/taskctl.py checkpoint-report --job-id 1 --json
+python .claude/scripts/taskctl.py audit 1 --quality --json
 ```
 
 Checkpoints live under `.claude/task-plans/checkpoints/` and summarize the user
 goal, job status, completed and missing artifacts, known blocker, next role,
 and next command.
+
+`audit --quality` adds non-invasive Markdown structure checks for report-style
+artifacts produced by `debugger`, `planner`, `uiux`, `reviewer`, and `closer`.
+Default `audit` remains a presence check for compatibility.
 
 ## Asset Generation
 

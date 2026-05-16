@@ -166,6 +166,13 @@ The Stop hook blocks final answers until one of these states is recorded.
 <installed-taskctl-command> audit <job_id>
 ```
 
+- For report-style Markdown artifacts produced by `debugger`, `planner`,
+  `uiux`, `reviewer`, or `closer`, prefer:
+
+```bash
+<installed-taskctl-command> audit <job_id> --quality
+```
+
 - Recover stuck workers only through `retry-task` or `cancel-job`; do not edit
   SQLite directly. For failed, blocked, or handed-off jobs, save and restore
   state with `checkpoint-save`, `checkpoint-list`, `checkpoint-restore`, and

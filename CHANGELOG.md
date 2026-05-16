@@ -6,6 +6,18 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.15 - 2026-05-16
+
+- Added `.claude/scripts/artifact_quality.py` with role-specific Markdown
+  structure checks for `debugger`, `planner`, `uiux`, `reviewer`, and
+  `closer` artifacts.
+- Added `taskctl audit --quality`, which reports weak artifacts separately
+  from missing artifact kinds or files while keeping default audit output
+  backward-compatible.
+- Added regression coverage proving structured debugger reports pass, weak
+  generic reports fail quality checks, and quality failures do not masquerade
+  as missing files.
+
 ## 0.1.14 - 2026-05-16
 
 - Added resumable task checkpoints through `taskctl checkpoint-save`,

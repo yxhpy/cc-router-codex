@@ -207,6 +207,8 @@ Tests:
 
 Goal: make “artifact exists” less weak as a completion signal.
 
+Status: implemented in `v0.1.15`.
+
 Changes:
 
 - Add `.claude/scripts/artifact_quality.py`.

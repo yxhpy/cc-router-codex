@@ -443,6 +443,103 @@ class TaskCtlTests(unittest.TestCase):
         self.assertTrue(audit["complete"])
         self.assertEqual(audit["workflow"], taskctl.ATOMIC_WORKFLOW)
 
+    def test_audit_quality_reports_weak_debugger_artifact_without_missing_file(self) -> None:
+        job_id = self.submit_job()
+        output = self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "debugger",
+            "--title",
+            "Diagnose retry failure",
+            "--prompt",
+            "Reproduce the failure and record the debug_report artifact.",
+            "--required-artifact",
+            "debug_report:.claude/artifacts/debug_report.md",
+        )
+        task_id = int(output.split()[1])
+        artifact_path = Path(self.workspace) / ".claude" / "artifacts" / "debug_report.md"
+        artifact_path.parent.mkdir(parents=True)
+        artifact_path.write_text("# Debug Report\nLooks fine.\n", encoding="utf-8")
+        self.run_cli(
+            "artifact",
+            str(task_id),
+            "--kind",
+            "debug_report",
+            "--path",
+            ".claude/artifacts/debug_report.md",
+            "--summary",
+            "debug report",
+        )
+        self.run_cli("complete-task", str(task_id), "--summary", "debug report complete")
+
+        default_code, default_output = self.run_cli_result("audit", str(job_id), "--json")
+        self.assertEqual(default_code, 0)
+        default_audit = json.loads(default_output)
+        self.assertTrue(default_audit["complete"])
+        self.assertNotIn("quality_issues", default_audit)
+
+        quality_code, quality_output = self.run_cli_result("audit", str(job_id), "--quality", "--json")
+        self.assertEqual(quality_code, 1)
+        quality_audit = json.loads(quality_output)
+        self.assertTrue(quality_audit["complete"])
+        self.assertTrue(quality_audit["quality_checked"])
+        self.assertFalse(quality_audit["quality_complete"])
+        self.assertEqual(quality_audit["missing_artifact_files"], [])
+        self.assertEqual(quality_audit["quality_issues"][0]["role"], "debugger")
+        self.assertEqual(quality_audit["quality_issues"][0]["path"], ".claude/artifacts/debug_report.md")
+        self.assertIn("feedback loop", quality_audit["quality_issues"][0]["missing"])
+
+    def test_audit_quality_accepts_structured_debugger_artifact(self) -> None:
+        job_id = self.submit_job()
+        output = self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "debugger",
+            "--title",
+            "Diagnose retry failure",
+            "--prompt",
+            "Reproduce the failure and record the debug_report artifact.",
+            "--required-artifact",
+            "debug_report:.claude/artifacts/debug_report.md",
+        )
+        task_id = int(output.split()[1])
+        artifact_path = Path(self.workspace) / ".claude" / "artifacts" / "debug_report.md"
+        artifact_path.parent.mkdir(parents=True)
+        artifact_path.write_text(
+            "\n".join(
+                [
+                    "# Debug Report",
+                    "## Feedback Loop",
+                    "## Reproduction",
+                    "## Hypotheses",
+                    "## Instrumentation",
+                    "## Fix Recommendation",
+                    "## Regression Check",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        self.run_cli(
+            "artifact",
+            str(task_id),
+            "--kind",
+            "debug_report",
+            "--path",
+            ".claude/artifacts/debug_report.md",
+            "--summary",
+            "debug report",
+        )
+        self.run_cli("complete-task", str(task_id), "--summary", "debug report complete")
+
+        quality = json.loads(self.run_cli("audit", str(job_id), "--quality", "--json"))
+
+        self.assertTrue(quality["complete"])
+        self.assertTrue(quality["quality_checked"])
+        self.assertTrue(quality["quality_complete"])
+        self.assertEqual(quality["quality_issues"], [])
+
     def test_audit_exposes_resume_hint_for_missing_artifact(self) -> None:
         job_id = self.submit_job()
         task_id = self.enqueue_step(job_id, artifact="debug_report:.claude/artifacts/debug_report.md")

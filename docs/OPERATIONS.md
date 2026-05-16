@@ -31,6 +31,7 @@ From the installed target:
 python .claude\scripts\taskctl.py status
 python .claude\scripts\focus_guard.py status --workspace . --json
 python .claude\scripts\prompt_template_mcp.py check --workspace . --json
+python .claude\scripts\taskctl.py audit <job_id> --quality --json
 ```
 
 From the source repository:
@@ -53,13 +54,16 @@ state before retrying:
 
 ```powershell
 python .claude\scripts\taskctl.py audit 1 --json
+python .claude\scripts\taskctl.py audit 1 --quality --json
 python .claude\scripts\taskctl.py checkpoint-save --job-id 1 --title "Resume blocked job"
 python .claude\scripts\taskctl.py checkpoint-restore 1 --json
 ```
 
 Use `checkpoint-list` when the checkpoint id is unknown, and
 `checkpoint-report --job-id 1` before handoff or final closure when several
-retry attempts were made.
+retry attempts were made. Use `audit --quality` when a job records
+report-style Markdown artifacts and you need to distinguish a present but weak
+report from a missing artifact.
 
 ## Upgrade A Target
 

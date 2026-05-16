@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+import artifact_quality
 import model_policy
 import command_catalog
 from project_paths import REPO_ROOT, script_command
@@ -1866,7 +1867,7 @@ def audit_resume_fields(
     }
 
 
-def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
+def audit_payload(conn: sqlite3.Connection, job_id: int, *, include_quality: bool = False) -> dict[str, Any]:
     load_job(conn, job_id)
     refresh_job_status(conn, job_id)
     job = load_job(conn, job_id)
@@ -1938,7 +1939,7 @@ def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
         and not missing_artifact_files
     )
     resume = audit_resume_fields(job, tasks, complete)
-    return {
+    payload = {
         "job_id": job_id,
         "job_status": job["status"],
         "workflow": workflow,
@@ -1954,16 +1955,36 @@ def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
         **resume,
         "complete": complete,
     }
+    if include_quality:
+        task_by_id = {int(task["id"]): task for task in tasks}
+        quality_artifacts: list[dict[str, Any]] = []
+        for artifact in artifacts:
+            quality_artifact = dict(artifact)
+            task = task_by_id.get(int(artifact["task_id"]))
+            if task is not None:
+                quality_artifact["role"] = str(task["role"])
+            quality_artifact["resolved_path"] = str(resolve_artifact_path(job["workspace"], artifact["path"]))
+            quality_artifacts.append(quality_artifact)
+        quality_issues = artifact_quality.validate_artifacts(job["workspace"], quality_artifacts)
+        payload.update(
+            {
+                "quality_checked": True,
+                "quality_complete": not quality_issues,
+                "quality_issues": quality_issues,
+            }
+        )
+    return payload
 
 
 def print_audit_payload(payload: dict[str, Any]) -> None:
+    audit_pass = payload["complete"] and (not payload.get("quality_checked") or payload.get("quality_complete", True))
     missing_roles = payload["missing_roles"]
     unfinished = payload["unfinished_tasks"]
     missing_artifact_kinds = payload["missing_artifact_kinds"]
     missing_artifact_files = payload["missing_artifact_files"]
     reviews = payload["reviews"]
     experience_counts = payload["experience_counts"]
-    print(f"Audit job #{payload['job_id']}: {'PASS' if payload['complete'] else 'NOT COMPLETE'}")
+    print(f"Audit job #{payload['job_id']}: {'PASS' if audit_pass else 'NOT COMPLETE'}")
     if missing_roles:
         print("Missing roles: " + ", ".join(missing_roles))
     if unfinished:
@@ -1972,6 +1993,18 @@ def print_audit_payload(payload: dict[str, Any]) -> None:
         print("Missing artifact kinds: " + ", ".join(missing_artifact_kinds))
     if missing_artifact_files:
         print("Missing artifact files: " + ", ".join(item["path"] for item in missing_artifact_files))
+    if payload.get("quality_checked"):
+        quality_issues = payload.get("quality_issues") or []
+        if quality_issues:
+            print("Artifact quality issues:")
+            for issue in quality_issues:
+                print(
+                    "  "
+                    f"T{issue.get('task_id')} {issue.get('role')} {issue.get('path')}: "
+                    f"missing {', '.join(issue.get('missing') or [])}"
+                )
+        else:
+            print("Artifact quality: pass")
     if not reviews:
         print("Reviews: none recorded")
     if experience_counts:
@@ -1986,12 +2019,13 @@ def print_audit_payload(payload: dict[str, Any]) -> None:
 
 def audit(args: argparse.Namespace) -> int:
     with closing(connect(args.db)) as conn:
-        payload = audit_payload(conn, args.job_id)
+        payload = audit_payload(conn, args.job_id, include_quality=args.quality)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
     else:
         print_audit_payload(payload)
-    return 0 if payload["complete"] else 1
+    audit_pass = payload["complete"] and (not args.quality or payload.get("quality_complete", True))
+    return 0 if audit_pass else 1
 
 
 def slugify(value: str, fallback: str = "checkpoint") -> str:
@@ -2491,6 +2525,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("audit", help="audit whether a job has completed the required worker loop")
     p.add_argument("job_id", type=int)
+    p.add_argument("--quality", action="store_true", help="also validate role-specific Markdown artifact structure")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=audit)
 

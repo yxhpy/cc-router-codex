@@ -38,6 +38,7 @@ sequenceDiagram
 | `.claude/scripts/llm_router.py` | Chooses the role and target artifact contract. |
 | `.claude/scripts/taskctl.py` | Main command surface for controlled execution. |
 | `.claude/scripts/command_catalog.py` | Machine-readable command contracts for exact local command discovery. |
+| `.claude/scripts/artifact_quality.py` | Role-specific Markdown quality checks used by `taskctl audit --quality`. |
 | `.claude/scripts/task_input_filter.py` | Validates role, prompt, artifact paths, and role/artifact compatibility. |
 | `.claude/scripts/codex_exec.py` | Runs Codex and writes durable logs instead of relying on stream output. |
 | `.claude/scripts/focus_guard.py` | Stores active goal state and blocks premature final answers. |
@@ -82,6 +83,15 @@ Incomplete audit payloads include `next_role`, `next_artifacts`,
 into a durable Markdown snapshot plus a SQLite row; `checkpoint-restore` brings
 it back in a later session, and `checkpoint-report` merges multiple checkpoints
 for handoff or closure.
+
+## Artifact Quality
+
+Default `taskctl audit` checks task status plus required artifact rows and
+files. `taskctl audit --quality` keeps those fields unchanged, then adds
+`quality_checked`, `quality_complete`, and `quality_issues` for supported
+Markdown reports. Quality failures are reported separately from missing
+artifact kinds or files, so recovery can distinguish "file absent" from "report
+too weak."
 
 ## Role Boundaries
 

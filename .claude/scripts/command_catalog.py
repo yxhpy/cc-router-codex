@@ -72,12 +72,12 @@ def contracts(workspace: str | None = None) -> dict[str, CommandContract]:
         ),
         "audit": CommandContract(
             name="audit",
-            summary="Audit whether a job is complete and all required artifacts exist.",
-            command=f"{taskctl} audit <job_id>",
+            summary="Audit whether a job is complete, all required artifacts exist, and optionally report artifact quality issues.",
+            command=f"{taskctl} audit <job_id> [--quality]",
             writes="Read-only.",
-            use_when="Use after a capability creates expected artifacts.",
+            use_when="Use after a capability creates expected artifacts; add --quality for report-style Markdown artifacts.",
             failure_hint="Run status first to find the correct job id.",
-            examples=(f"{taskctl} audit 1", f"{taskctl} audit 1 --json"),
+            examples=(f"{taskctl} audit 1", f"{taskctl} audit 1 --quality --json"),
         ),
         "focus-complete": CommandContract(
             name="focus-complete",

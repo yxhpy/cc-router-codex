@@ -120,7 +120,10 @@ skill invocation.
     Generated bitmap assets are allowed when they are recorded as local files
     and trace back to an `asset_generation_brief` or project design source.
 18. Before reporting completion, run `taskctl.py audit <job_id>` and report
-    missing artifacts or failed gates instead of claiming closure.
+    missing artifacts or failed gates instead of claiming closure. For
+    report-style Markdown artifacts from `debugger`, `planner`, `uiux`,
+    `reviewer`, or `closer`, prefer `taskctl.py audit <job_id> --quality` so
+    weak reports are flagged separately from missing files.
 19. If a worker is failed or stale, use `taskctl.py retry-task <task_id>` or
     `taskctl.py cancel-job <job_id>`; never patch SQLite manually. When a job
     is failed, blocked, or being handed off, use `taskctl.py checkpoint-save`
