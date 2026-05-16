@@ -6,6 +6,12 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.19 - 2026-05-16
+
+- Fixed installed `test_skill_manifest_check.py` so it imports the installed
+  `.claude/scripts/skill_manifest_check.py` when the source-repository
+  `tools/skill_manifest_check.py` wrapper is absent.
+
 ## 0.1.18 - 2026-05-16
 
 - Fixed installed `test_all.py` so it runs the installed

@@ -274,7 +274,20 @@ Changes:
 - Let installed `test_all.py` run `.claude/scripts/skill_manifest_check.py`
   when `tools/skill_manifest_check.py` is absent.
 
-### v0.1.19: Experience Atoms
+### v0.1.19: Installed Skill Manifest Test Hotfix
+
+Goal: keep the skill manifest regression test usable from installed targets
+that do not carry the source repository's top-level `tools/` directory.
+
+Status: implemented in `v0.1.19`.
+
+Changes:
+
+- Let installed `test_skill_manifest_check.py` import
+  `.claude/scripts/skill_manifest_check.py` when `tools/skill_manifest_check.py`
+  is absent.
+
+### v0.1.20: Experience Atoms
 
 Goal: make learned experiences searchable and safer to reuse.
 

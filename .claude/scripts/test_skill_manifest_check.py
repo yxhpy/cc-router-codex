@@ -12,7 +12,10 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SPEC = importlib.util.spec_from_file_location("skill_manifest_check", ROOT / "tools" / "skill_manifest_check.py")
+CHECKER_PATH = ROOT / "tools" / "skill_manifest_check.py"
+if not CHECKER_PATH.is_file():
+    CHECKER_PATH = ROOT / ".claude" / "scripts" / "skill_manifest_check.py"
+SPEC = importlib.util.spec_from_file_location("skill_manifest_check", CHECKER_PATH)
 checker = importlib.util.module_from_spec(SPEC)
 assert SPEC and SPEC.loader
 sys.modules[SPEC.name] = checker
