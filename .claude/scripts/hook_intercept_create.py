@@ -4,12 +4,22 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
+from typing import Any
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import target_workspace
-from project_paths import python_command, script_path
+from llm_router import (
+    call_codex_json,
+    codex_model,
+    codex_reasoning_effort,
+    codex_timeout,
+    load_project_env,
+    provider_mode,
+)
+from project_paths import parse_env_file, python_command, script_path
 
 
 SAFE_SCRIPT_NAMES = (
@@ -71,6 +81,33 @@ SAFE_BASH_CMDS = [
     r"^grep\b",
     r"^rg\b",
 ]
+
+BASH_GUARD_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "allow": {"type": "boolean"},
+        "direct_file_write": {"type": "boolean"},
+        "reason": {"type": "string", "maxLength": 500},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    },
+    "required": ["allow", "direct_file_write", "reason", "confidence"],
+    "additionalProperties": False,
+}
+
+BASH_GUARD_PROMPT = """You are a Bash command safety reviewer for a Claude/Codex control plane.
+
+Return exactly one JSON object matching the schema: allow, direct_file_write, reason, confidence.
+
+Policy:
+- Block commands that directly create, edit, append, overwrite, rename, copy, move, or delete project files from the shell.
+- Block output redirection to files, tee-to-file, heredoc-to-file, inline scripts that call file write APIs, download-to-file commands, destructive filesystem commands, direct apply_patch, and direct codex exec bypassing taskctl.
+- Allow read-only inspection, package-manager lifecycle commands, test/build/dev-server commands, version-control metadata commands, and control-plane scripts when they do not explicitly write file contents from the shell command.
+- Package managers may update dependency/cache/build artifacts, but they are not Claude-authored direct file writes; allow them unless the command also contains explicit shell file-writing operators.
+- If uncertain, set allow=false.
+
+Classify only the provided JSON payload's command. Do not run commands or suggest alternatives.
+"""
+
 
 def taskctl_guidance(workspace: str) -> str:
     return f"""Do not write production files directly from Claude.
@@ -143,25 +180,112 @@ def is_safe_bash_command(cmd: str) -> bool:
     return is_safe_control_script(cmd) or any(re.search(pattern, cmd, re.IGNORECASE) for pattern in SAFE_BASH_CMDS)
 
 
+def env_flag(name: str, default: str = "") -> bool:
+    value = os.environ.get(name, default)
+    return str(value).strip().lower() not in {"", "0", "false", "off", "none", "no"}
+
+
+def load_bash_guard_env() -> None:
+    try:
+        load_project_env()
+        return
+    except Exception:
+        pass
+    for key, value in parse_env_file().items():
+        os.environ.setdefault(key, value)
+
+
+def redact_command_for_review(cmd: str) -> str:
+    redacted = str(cmd or "")
+    redacted = re.sub(
+        r"(?i)\b((?:[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|PASS|API_KEY|ACCESS_KEY)[A-Z0-9_]*)=)([^\s]+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)(\bsshpass\s+-p\s+)(?:\"[^\"]*\"|'[^']*'|\S+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)(\b--?(?:password|passwd|token|secret|api-key|access-key|key)\s+)(?:\"[^\"]*\"|'[^']*'|\S+)",
+        r"\1[REDACTED]",
+        redacted,
+    )
+    return redacted
+
+
+def mock_bash_guard_decision() -> tuple[bool, str] | None:
+    raw = os.environ.get("TASKCTL_BASH_GUARD_MOCK_JSON")
+    if raw is None or raw == "":
+        return None
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return False, f"invalid TASKCTL_BASH_GUARD_MOCK_JSON: {exc}"
+    if not isinstance(payload, dict):
+        return False, "TASKCTL_BASH_GUARD_MOCK_JSON must be a JSON object"
+    allowed = bool(payload.get("allow")) and not bool(payload.get("direct_file_write"))
+    reason = str(payload.get("reason") or "mocked Bash guard decision")
+    return allowed, reason
+
+
+def review_ambiguous_bash_command(cmd: str, workspace: str) -> tuple[bool, str]:
+    load_bash_guard_env()
+    mocked = mock_bash_guard_decision()
+    if mocked is not None:
+        return mocked
+
+    if not env_flag("TASKCTL_BASH_GUARD", "off"):
+        return False, "Bash command is not in the deterministic allowlist and TASKCTL_BASH_GUARD is disabled"
+
+    mode = provider_mode("bash_guard")
+    if mode != "codex":
+        return False, f"Bash guard provider {mode!r} is unsupported; use TASKCTL_BASH_GUARD_PROVIDER=codex"
+
+    timeout = int(os.environ.get("TASKCTL_BASH_GUARD_TIMEOUT", "25"))
+    try:
+        payload = call_codex_json(
+            system_prompt=BASH_GUARD_PROMPT,
+            user_content=json.dumps(
+                {
+                    "command": redact_command_for_review(cmd),
+                    "workspace": workspace,
+                },
+                ensure_ascii=False,
+            ),
+            schema=BASH_GUARD_SCHEMA,
+            model=codex_model("bash_guard"),
+            reasoning_effort=codex_reasoning_effort("bash_guard"),
+            timeout=codex_timeout("bash_guard", timeout),
+        )
+    except Exception as exc:
+        return False, f"gpt-5.4-mini Bash guard failed: {exc}"
+
+    allowed = bool(payload.get("allow")) and not bool(payload.get("direct_file_write"))
+    reason = str(payload.get("reason") or "gpt-5.4-mini Bash guard decision")
+    return allowed, reason
+
+
 def without_fd_redirects(cmd: str) -> str:
     return re.sub(r"[0-9]?>&[0-9]+", "", cmd)
 
 
-def has_file_creation(bash_cmd: str) -> bool:
+def bash_block_reason(bash_cmd: str, workspace: str) -> str | None:
     cmd = bash_cmd.strip()
 
     if re.search(r"^(codex|codex\.cmd)\s+exec\b", cmd, re.IGNORECASE):
-        return True
+        return f"Bash file operation blocked: {cmd[:200]}"
 
     safe_command = is_safe_bash_command(cmd)
     redirection_scan = without_fd_redirects(cmd)
 
     if re.search(r"(^|[^&])(?:[0-9])?>{1,2}\s*\S", redirection_scan):
-        return True
+        return f"Bash file operation blocked: {cmd[:200]}"
     if re.search(r"&>{1,2}\s*\S", redirection_scan):
-        return True
+        return f"Bash file operation blocked: {cmd[:200]}"
     if re.search(r"<<.*\S.*(?:>|>>)\s*\S", redirection_scan):
-        return True
+        return f"Bash file operation blocked: {cmd[:200]}"
 
     mutating_patterns = [
         r"\btee\b",
@@ -185,12 +309,19 @@ def has_file_creation(bash_cmd: str) -> bool:
         r"\bapply_patch\b",
     ]
     if any(re.search(pattern, cmd, re.IGNORECASE | re.DOTALL) for pattern in mutating_patterns):
-        return True
+        return f"Bash file operation blocked: {cmd[:200]}"
 
     if safe_command:
-        return False
+        return None
 
-    return True
+    allowed, reason = review_ambiguous_bash_command(cmd, workspace)
+    if allowed:
+        return None
+    return f"Bash command rejected by gpt-5.4-mini guard: {reason}. Command: {cmd[:200]}"
+
+
+def has_file_creation(bash_cmd: str) -> bool:
+    return bash_block_reason(bash_cmd, str(os.getcwd())) is not None
 
 
 def handle_write(tool_name: str, tool_input: dict[str, object], workspace: str) -> None:
@@ -227,8 +358,9 @@ def main() -> None:
 
     if tool_name == "Bash":
         bash_cmd = str(tool_input.get("command", ""))
-        if has_file_creation(bash_cmd):
-            block(f"Bash file operation blocked: {bash_cmd[:200]}", workspace)
+        reason = bash_block_reason(bash_cmd, workspace)
+        if reason:
+            block(reason, workspace)
         print(json.dumps({"continue": True}))
         return
 

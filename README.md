@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.8`.
+Current release: `v0.1.9`.
 
 ## What It Does
 
@@ -21,7 +21,7 @@ and fast local checks before production work is allowed to finish.
 | Capability | Production behavior |
 | --- | --- |
 | Task routing | `UserPromptSubmit` classifies the user's goal and emits a `taskctl.py capability` command. |
-| Write control | `PreToolUse` blocks direct product writes unless work is routed through the control plane. |
+| Write control | `PreToolUse` blocks direct product writes, allows known lifecycle commands, and asks `gpt-5.4-mini` to review ambiguous Bash commands. |
 | Focus guard | `Stop` blocks final answers until the active goal is marked complete or exhausted with evidence. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |

@@ -65,6 +65,22 @@ def router_mock(
     }
 
 
+def bash_guard_mock(*, allow: bool, direct_file_write: bool = False, reason: str = "mocked Bash guard") -> dict[str, str]:
+    return {
+        "TASKCTL_BASH_GUARD": "llm",
+        "TASKCTL_BASH_GUARD_PROVIDER": "codex",
+        "TASKCTL_BASH_GUARD_MOCK_JSON": json.dumps(
+            {
+                "allow": allow,
+                "direct_file_write": direct_file_write,
+                "reason": reason,
+                "confidence": 0.95,
+            },
+            ensure_ascii=False,
+        ),
+    }
+
+
 class HookTests(unittest.TestCase):
     def tearDown(self) -> None:
         if MAINTENANCE_MARKER.exists():
@@ -165,10 +181,36 @@ class HookTests(unittest.TestCase):
                 self.assertEqual(output["decision"], "block")
 
     def test_blocks_unknown_bash_by_default(self) -> None:
-        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": "node build.js"}})
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "node build.js"}},
+            {"TASKCTL_BASH_GUARD": "off"},
+        )
 
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
+
+    def test_allows_ambiguous_bash_when_model_guard_allows(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "node build.js"}},
+            bash_guard_mock(allow=True),
+        )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_blocks_ambiguous_bash_when_model_guard_blocks(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "node build.js"}},
+            bash_guard_mock(allow=False, direct_file_write=True, reason="would write files"),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("gpt-5.4-mini guard", output["reason"])
+        self.assertIn("would write files", output["reason"])
 
     def test_allows_package_manager_project_commands(self) -> None:
         examples = [

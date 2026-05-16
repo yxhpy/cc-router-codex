@@ -70,10 +70,13 @@ skill invocation.
 11. `capability` automatically applies `.claude/model_policy.json`; ds v4 should
    not choose worker models manually unless setting an explicit emergency
    override through `CODEX_MODEL` or `CODEX_REASONING_EFFORT`.
-12. Intelligent routing for UserPromptSubmit and semantic task-input guarding
-   are LLM-backed through `.claude/scripts/llm_router.py`. Provider/model
-   settings are loaded from `.claude/.env`; Codex CLI `gpt-5.4-mini` with an
-   output schema is preferred for stable JSON routing/guard decisions. The
+12. Intelligent routing for UserPromptSubmit, semantic task-input guarding, and
+   ambiguous Bash command review are LLM-backed through
+   `.claude/scripts/llm_router.py`. Provider/model settings are loaded from
+   `.claude/.env`; Codex CLI `gpt-5.4-mini` with an output schema is preferred
+   for stable JSON routing/guard decisions. Bash PreToolUse still blocks
+   deterministic direct-write patterns before model review and allows known
+   lifecycle commands such as package-manager install/build/test. The
    OpenAI-compatible SDK provider remains configurable. Do not replace semantic
    routing, production-work detection, role inference, or role-boundary judgment
    with hard-coded regex or keyword routing.
