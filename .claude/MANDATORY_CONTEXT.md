@@ -30,7 +30,10 @@ skill invocation.
    <project>` or `taskctl.py doctor --workspace <project>` instead of guessing
    or reading source. PreToolUse block responses include `next_command` and
    `command_contract` fields for a directly executable catalog lookup, plus
-   `replacement_command` for the taskctl capability template.
+   `replacement_command` for the taskctl capability template. Command contracts
+   include `state_input`, `state_output`, and `next_state`; use those fields to
+   choose the next command from recorded state instead of retrying guessed
+   syntax.
 6. Do not use fixed workflows, import-plan, run-job, or dependency chains.
    There is no planner-owned pipeline. How capabilities are combined is decided
    only by the main model between single-step executions.

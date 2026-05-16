@@ -6,6 +6,16 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.21 - 2026-05-16
+
+- Added structured `state_input`, `state_output`, and `next_state` fields to
+  every command catalog contract.
+- Extended `taskctl command <name> --json` and text output so agents can see
+  required input state, produced state, and the next recovery step without
+  reading source code.
+- Added regression coverage requiring every command contract to define nonempty
+  state transition fields.
+
 ## 0.1.20 - 2026-05-16
 
 - Added optional atom metadata fields to experiences:

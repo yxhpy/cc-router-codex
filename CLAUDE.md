@@ -171,6 +171,14 @@ semantic role-boundary judgment:
 - Mark contradicted lessons with `experience-stale` and conflict ids instead of
   deleting evidence.
 
+## Command State Contracts
+
+- Use `taskctl.py command <name> --workspace <project>` before unfamiliar
+  control-plane commands instead of reading source or guessing syntax.
+- Command contracts include `state_input`, `state_output`, and `next_state`.
+  Use those fields to decide whether to run `status`, `audit`, checkpoint
+  restore/save, or the replacement capability command next.
+
 ## Completion Rules
 
 - A task is not successful just because Codex exits successfully. Required

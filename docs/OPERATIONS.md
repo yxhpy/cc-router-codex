@@ -65,6 +65,25 @@ retry attempts were made. Use `audit --quality` when a job records
 report-style Markdown artifacts and you need to distinguish a present but weak
 report from a missing artifact.
 
+## Command State Contracts
+
+Inspect a command contract before running unfamiliar or previously failed
+control-plane commands:
+
+```powershell
+python .claude\scripts\taskctl.py command capability --workspace . --json
+python .claude\scripts\taskctl.py command checkpoint-restore --workspace .
+```
+
+Each contract includes:
+
+- `state_input`: concrete state that must exist before running the command.
+- `state_output`: state the command should produce or report.
+- `next_state`: the success/failure move to run next.
+
+Use these fields with `status`, `audit`, and checkpoints instead of reading
+`taskctl.py` source or retrying guessed command shapes.
+
 ## Optional Project Context
 
 `CONTEXT.md` and `docs/adr/` are optional project-owned docs. The installer does

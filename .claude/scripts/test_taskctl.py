@@ -106,6 +106,34 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn(self.workspace, payload["command"])
         self.assertIn("<role>", payload["command"])
 
+    def test_command_contract_exposes_state_transition_fields(self) -> None:
+        payload = json.loads(
+            self.run_cli(
+                "command",
+                "capability",
+                "--workspace",
+                self.workspace,
+                "--json",
+            )
+        )
+
+        self.assertIn("state_input", payload)
+        self.assertIn("state_output", payload)
+        self.assertIn("next_state", payload)
+        self.assertIn("workspace", payload["state_input"])
+        self.assertIn("job", payload["state_output"])
+        self.assertIn("audit", " ".join(payload["next_state"]))
+
+    def test_all_command_contracts_define_state_transitions(self) -> None:
+        from command_catalog import contracts
+
+        for name, contract in contracts(self.workspace).items():
+            with self.subTest(name=name):
+                payload = contract.to_dict()
+                self.assertGreater(len(payload["state_input"]), 0)
+                self.assertGreater(len(payload["state_output"]), 0)
+                self.assertGreater(len(payload["next_state"]), 0)
+
     def test_doctor_lists_command_catalog(self) -> None:
         payload = json.loads(self.run_cli("doctor", "--workspace", self.workspace, "--json"))
 

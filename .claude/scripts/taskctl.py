@@ -2408,6 +2408,13 @@ def print_command_contract(contract: dict[str, Any]) -> None:
     print(f"Writes: {contract['writes']}")
     print(f"Use when: {contract['use_when']}")
     print(f"Failure hint: {contract['failure_hint']}")
+    print("State input: " + ", ".join(contract.get("state_input") or []))
+    print("State output: " + ", ".join(contract.get("state_output") or []))
+    next_state = contract.get("next_state") or []
+    if next_state:
+        print("Next state:")
+        for item in next_state:
+            print(f"  {item}")
     examples = contract.get("examples") or []
     if examples:
         print("Examples:")

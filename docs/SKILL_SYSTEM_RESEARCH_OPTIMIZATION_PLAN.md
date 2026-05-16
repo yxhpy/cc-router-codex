@@ -304,15 +304,36 @@ Tests:
 - Existing experience DB migration is backward-compatible.
 - Accepted low-confidence items can be hidden from generated skill output.
 
+### v0.1.21: Command State Contracts
+
+Goal: reduce command retries and source-reading loops after hook blocks or
+failed capability commands.
+
+Status: implemented in `v0.1.21`.
+
+Changes:
+
+- Add structured `state_input`, `state_output`, and `next_state` fields to
+  every command catalog contract.
+- Render command state fields in `taskctl command <name>` text and JSON output.
+- Keep hooks using the same command catalog lookup path, so blocked commands
+  point to contracts with recovery state instead of raw syntax only.
+
+Tests:
+
+- `taskctl command capability --json` exposes state transition fields.
+- Every command contract defines nonempty state transition fields.
+
 ## Highest Leverage Next Step
 
-Implement v0.1.14 first. It addresses the current pain most directly:
+The next highest-leverage step is to make hook block messages consume the new
+command state contract more directly:
 
-- Claude fails a command.
-- Instead of guessing, it can restore the checkpoint.
-- The checkpoint says what failed, what was already tried, what artifacts are
-  missing, and which role/command should run next.
-- Stop hook remains strict, but recovery becomes cheaper and less repetitive.
+- Include the most relevant `state_input`, `state_output`, and `next_state`
+  entries directly in PreToolUse block payloads.
+- Add a compact `taskctl command --explain-failure <log-or-code>` helper only
+  if source-free recovery still needs another step.
+- Keep Stop strict, but make recovery prompts smaller and more mechanical.
 
-This borrows dbskill's save/restore/report pattern, keeps cc-router-codex's
-existing command catalog, and avoids touching production-write policy.
+This builds on the command catalog and checkpoint work without weakening the
+production-write policy.

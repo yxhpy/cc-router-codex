@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.20`.
+Current release: `v0.1.21`.
 
 ## What It Does
 
@@ -25,6 +25,7 @@ and fast local checks before production work is allowed to finish.
 | Permission mode | Claude Code permission prompts default to `bypassPermissions`; project hooks remain the enforcement layer. |
 | Focus guard | `Stop` blocks final answers until the active goal is marked complete or exhausted with evidence. |
 | Command catalog | `taskctl command` and `taskctl doctor` print exact local commands so Claude does not need to guess syntax. |
+| Command state contracts | Every command contract declares input state, output state, and next recovery state. |
 | Failure resume | `taskctl checkpoint-*` saves, restores, lists, and reports resumable job state after failed or blocked work. |
 | Artifact quality | `taskctl audit --quality` checks supported Markdown reports for role-specific evidence structure. |
 | Project context | Workers read optional `CONTEXT.md` and `docs/adr/` when present; installers do not create them. |
@@ -140,6 +141,9 @@ python .claude/scripts/taskctl.py doctor --workspace /path/to/project
 When `PreToolUse` blocks a direct write, the hook response includes
 `next_command` / `command_contract` fields with a directly executable catalog
 lookup command, plus `replacement_command` with the taskctl capability template.
+Each returned contract also includes `state_input`, `state_output`, and
+`next_state` so the next command can be chosen from recorded state instead of
+source inspection or retries.
 
 ## Failure Resume
 
