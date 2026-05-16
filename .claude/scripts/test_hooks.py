@@ -90,6 +90,7 @@ class HookTests(unittest.TestCase):
 
     def test_settings_hook_commands_are_repo_relative(self) -> None:
         settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
         commands = [
             hook["command"]
             for hook_group in settings["hooks"].values()

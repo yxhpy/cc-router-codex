@@ -6,6 +6,19 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.13 - 2026-05-16
+
+- Set Claude Code project permissions to `defaultMode=bypassPermissions` by
+  default, so Claude's own permission prompt layer does not repeatedly block
+  commands while project hooks remain the enforcement layer.
+- Updated the installer to enforce the same permission mode in installed
+  `.claude/settings.json`.
+- Promoted critical taskctl roles (`planner`, `uiux`, `prototype`,
+  `debugger`, `security`, `fullstack`, and `reviewer`) to `xhigh` reasoning,
+  matching current OpenAI GPT model support.
+- Stopped downgrading `xhigh` to `high` in the Codex CLI wrapper now that
+  current Codex accepts `model_reasoning_effort="xhigh"`.
+
 ## 0.1.12 - 2026-05-16
 
 - Changed PreToolUse block `next_command` to a directly executable

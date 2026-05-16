@@ -60,6 +60,11 @@ and rewrite hook commands to absolute installed script paths. This keeps global
 and project-level installs independent of the shell's current working
 directory.
 
+Claude Code permission prompts default to `bypassPermissions` so the terminal
+does not pause on every command. The enforcement boundary is the project hook
+layer: `PreToolUse` blocks direct product writes and unsafe Bash operations,
+while `Stop` prevents premature completion.
+
 ## Command Contracts
 
 Claude should not infer control-plane command syntax from source files.

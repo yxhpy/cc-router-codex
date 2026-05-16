@@ -3,6 +3,7 @@
     "task-decompose": true
   },
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(python *)",
       "Bash(python3 *)",

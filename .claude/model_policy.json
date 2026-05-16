@@ -8,7 +8,7 @@
     "Use gpt-5.5 for complex reasoning, coding, tool-heavy agents, long-context synthesis, architecture, implementation, and review.",
     "Use gpt-5.4 when the task is still professional coding work but the quality risk is lower and cost/latency matters.",
     "Use gpt-5.4-mini or gpt-5.4-nano only for simple high-volume routing, extraction, classification, ranking, summarization, or cheap subagent work outside the main production worker loop.",
-    "Start with medium reasoning for balanced quality, then raise to high for architecture, implementation, review, and hard debugging. Reserve xhigh/pro-class models for asynchronous evals or exceptional hard tasks."
+    "Start with medium reasoning for balanced quality. Use xhigh for critical planning, UI/UX synthesis, prototyping, debugging, security review, full-stack implementation, and final review where mistakes have high downstream cost."
   ],
   "default": {
     "model": "gpt-5.5",
@@ -18,8 +18,8 @@
   "roles": {
     "planner": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Owns decomposition, dependency structure, success criteria, and worker prompts."
+      "reasoning_effort": "xhigh",
+      "why": "Owns decomposition, dependency structure, success criteria, and worker prompts; early mistakes compound across all later workers."
     },
     "divergent": {
       "model": "gpt-5.5",
@@ -33,13 +33,13 @@
     },
     "uiux": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Needs visual, product, and existing-system consistency."
+      "reasoning_effort": "xhigh",
+      "why": "Needs visual, product, and existing-system consistency before implementation locks in the design."
     },
     "prototype": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Converts requirements and style contracts into an implementable design."
+      "reasoning_effort": "xhigh",
+      "why": "Converts requirements and style contracts into an implementable design with high downstream influence."
     },
     "assetgen": {
       "model": "gpt-5.4-mini",
@@ -48,7 +48,7 @@
     },
     "debugger": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
+      "reasoning_effort": "xhigh",
       "why": "Root-cause isolation needs strong reasoning over logs, symptoms, and minimal reproduction paths without editing product code."
     },
     "operator": {
@@ -58,8 +58,8 @@
     },
     "security": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Security review and permission analysis require conservative high-quality reasoning."
+      "reasoning_effort": "xhigh",
+      "why": "Security review and permission analysis require conservative maximum-quality reasoning."
     },
     "docs": {
       "model": "gpt-5.4",
@@ -73,7 +73,7 @@
     },
     "fullstack": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
+      "reasoning_effort": "xhigh",
       "why": "Highest blast radius: code edits, integration, and architecture preservation."
     },
     "tester": {
@@ -83,8 +83,8 @@
     },
     "reviewer": {
       "model": "gpt-5.5",
-      "reasoning_effort": "high",
-      "why": "Needs strong bug finding, regression analysis, and quality judgment."
+      "reasoning_effort": "xhigh",
+      "why": "Needs strong bug finding, regression analysis, and quality judgment before closure."
     },
     "closer": {
       "model": "gpt-5.4",

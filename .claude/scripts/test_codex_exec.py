@@ -41,11 +41,11 @@ class CodexExecEnvTests(unittest.TestCase):
         self.assertEqual(env["no_proxy"], "localhost,127.0.0.1")
         self.assertIn("NO_PROXY", names)
 
-    def test_xhigh_reasoning_is_mapped_for_cli_compatibility(self) -> None:
+    def test_xhigh_reasoning_is_preserved_for_current_cli(self) -> None:
         effort, note = codex_exec._normalize_reasoning_effort("xhigh")
 
-        self.assertEqual(effort, "high")
-        self.assertIn("not accepted", note)
+        self.assertEqual(effort, "xhigh")
+        self.assertEqual(note, "")
 
     def test_env_reasoning_effort_overrides_config(self) -> None:
         with mock.patch.object(codex_exec, "_read_config_reasoning_effort", return_value="xhigh"):

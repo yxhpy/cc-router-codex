@@ -137,6 +137,7 @@ class InstallTests(unittest.TestCase):
                 target.resolve() / ".claude" / "scripts" / "hook_stop_focus.py"
             )
             self.assertEqual(stop_command, f"C:/Python/python.exe {stop_hook}")
+            self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
             allow = settings["permissions"]["allow"]
             self.assertIn("Bash(python *)", allow)
             self.assertIn("Bash(codex *)", allow)

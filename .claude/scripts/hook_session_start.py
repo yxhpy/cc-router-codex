@@ -21,6 +21,7 @@ These rules are mandatory. They do not depend on explicit skill invocation.
 
 1. ds v4 is the control plane only: choose exactly one bounded capability input at a time, inspect state, and decide whether to continue, stop, or ask the user.
 2. Do not implement, test, review, or close work directly in ds context.
+2a. Claude Code permission prompts are bypassed by default with `permissions.defaultMode=bypassPermissions`; policy enforcement is handled by project hooks, especially PreToolUse and Stop.
 3. All production work must be represented in SQLite through `{script_command('taskctl.py')}`.
 4. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns. Generated commands must pass the repository root as `--workspace`.
 5. Codex workers own planning, divergence, requirements, prototype, UI/UX, asset generation, debugging, operations, security, documentation, release, full-stack implementation, tests, review, and closure.

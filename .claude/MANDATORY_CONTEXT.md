@@ -8,6 +8,9 @@ skill invocation.
    escalation.
 2. ds v4 must not implement, test, review, or close production work directly in
    its own context.
+   Claude Code permission prompts are bypassed by default with
+   `permissions.defaultMode=bypassPermissions`; policy enforcement is handled
+   by project hooks, especially PreToolUse and Stop.
 3. All production work must be represented in SQLite through the installed
    `taskctl.py` command injected by the hooks/session context. For global
    installs this is an absolute Python plus absolute script path; do not

@@ -33,7 +33,7 @@ class ModelPolicyTests(unittest.TestCase):
         choice = model_policy.select_model("general", "fullstack", model_policy.FALLBACK_POLICY)
 
         self.assertEqual(choice.model, "gpt-5.5")
-        self.assertEqual(choice.reasoning_effort, "high")
+        self.assertEqual(choice.reasoning_effort, "xhigh")
         self.assertEqual(choice.source, "role:fullstack")
 
     def test_assetgen_uses_mini_model_for_prompt_template_adapter(self) -> None:
@@ -45,9 +45,9 @@ class ModelPolicyTests(unittest.TestCase):
 
     def test_specialized_roles_have_model_policy_entries(self) -> None:
         expected = {
-            "debugger": ("gpt-5.5", "high"),
+            "debugger": ("gpt-5.5", "xhigh"),
             "operator": ("gpt-5.4", "medium"),
-            "security": ("gpt-5.5", "high"),
+            "security": ("gpt-5.5", "xhigh"),
             "docs": ("gpt-5.4", "medium"),
             "release": ("gpt-5.4", "medium"),
         }
@@ -57,6 +57,15 @@ class ModelPolicyTests(unittest.TestCase):
                 self.assertEqual(choice.model, model)
                 self.assertEqual(choice.reasoning_effort, effort)
                 self.assertEqual(choice.source, f"role:{role}")
+
+    def test_xhigh_is_valid_for_critical_roles(self) -> None:
+        self.assertIn("xhigh", model_policy.VALID_EFFORTS)
+
+        for role in ("planner", "uiux", "prototype", "debugger", "security", "fullstack", "reviewer"):
+            with self.subTest(role=role):
+                choice = model_policy.select_model("general", role, model_policy.FALLBACK_POLICY)
+                self.assertEqual(choice.model, "gpt-5.5")
+                self.assertEqual(choice.reasoning_effort, "xhigh")
 
     def test_env_overrides_are_visible_without_losing_policy_source(self) -> None:
         choice = model_policy.ModelChoice("gpt-5.5", "high", "role:reviewer", "review")

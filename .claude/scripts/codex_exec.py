@@ -197,9 +197,7 @@ def _read_config_reasoning_effort() -> str:
 
 def _normalize_reasoning_effort(value: str) -> tuple[str, str]:
     normalized = value.strip().lower()
-    if normalized == "xhigh":
-        return "high", "xhigh is not accepted by this Codex CLI; using high"
-    if normalized in {"minimal", "low", "medium", "high"}:
+    if normalized in {"minimal", "low", "medium", "high", "xhigh"}:
         return normalized, ""
     return "", f"unsupported reasoning effort ignored: {value}"
 

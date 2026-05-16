@@ -6,6 +6,9 @@ These rules apply even when no skill is explicitly invoked.
 ## Default Production Path
 
 - The controller model must not directly create or modify product files.
+- Claude Code permission prompts are bypassed by default through
+  `permissions.defaultMode=bypassPermissions`; policy enforcement is handled by
+  the project hooks, especially PreToolUse and Stop.
 - `.claude` is not a blanket write escape hatch. Direct Claude writes are
   limited to runtime state documented in `.claude/CONTROL_PLANE_POLICY.md`;
   control-plane source/config writes require explicit maintenance mode.

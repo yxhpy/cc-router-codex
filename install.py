@@ -38,6 +38,7 @@ DEFAULT_BASH_ALLOW_RULES = (
     "Bash(python:*)",
     "Bash(codex:*)",
 )
+DEFAULT_PERMISSION_MODE = "bypassPermissions"
 
 
 @dataclass(frozen=True)
@@ -276,6 +277,8 @@ def ensure_permission_allows(payload: dict[str, object], detection: Detection) -
     if not isinstance(allow, list):
         allow = []
         permissions["allow"] = allow
+
+    permissions["defaultMode"] = DEFAULT_PERMISSION_MODE
 
     seen = {entry for entry in allow if isinstance(entry, str)}
     for rule in install_bash_allow_rules(detection):
