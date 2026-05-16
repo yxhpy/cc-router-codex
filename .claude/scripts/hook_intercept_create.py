@@ -11,7 +11,7 @@ from typing import Any
 
 import command_catalog
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
-from hook_context import target_workspace
+from hook_context import hook_tool_input, hook_tool_name, is_grok_hook, target_workspace
 from llm_router import (
     call_codex_json,
     codex_model,
@@ -134,25 +134,34 @@ which runs the built-in Codex raster backend at .claude/scripts/assetgen_exec.py
 """
 
 
-def block(reason: str, workspace: str, next_command_name: str = "capability") -> None:
+def allow(*, grok: bool = False) -> None:
+    if grok:
+        print(json.dumps({"decision": "allow", "continue": True}))
+        return
+    print(json.dumps({"continue": True}))
+
+
+def block(reason: str, workspace: str, next_command_name: str = "capability", *, grok: bool = False) -> None:
     replacement_command = command_catalog.next_command(next_command_name, workspace)
     contract_command = command_catalog.inspect_command(next_command_name, workspace)
     message = f"{reason}\n\n{taskctl_guidance(workspace)}"
-    print(json.dumps({
-        "decision": "block",
+    payload = {
+        "decision": "deny" if grok else "block",
         "reason": message,
         "continue": False,
         "next_command": contract_command,
         "replacement_command": replacement_command,
         "command_contract": contract_command,
-        "stopReason": message,
-        "hookSpecificOutput": {
+        "systemMessage": message,
+    }
+    if not grok:
+        payload["stopReason"] = message
+        payload["hookSpecificOutput"] = {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": message,
-        },
-        "systemMessage": message,
-    }, ensure_ascii=False))
+        }
+    print(json.dumps(payload, ensure_ascii=False))
     raise SystemExit(2)
 
 
@@ -403,17 +412,21 @@ def has_file_creation(bash_cmd: str) -> bool:
     return bash_block_reason(bash_cmd, str(os.getcwd())) is not None
 
 
-def handle_write(tool_name: str, tool_input: dict[str, object], workspace: str) -> None:
-    file_path = str(tool_input.get("file_path", ""))
+def handle_write(tool_name: str, tool_input: dict[str, object], workspace: str, *, grok: bool = False) -> None:
+    file_path = str(tool_input.get("file_path") or tool_input.get("filePath") or tool_input.get("path") or "")
     decision = classify_direct_write(file_path)
     if decision.allowed:
-        print(json.dumps({"continue": True}))
+        allow(grok=grok)
         return
 
     extra = ""
     if decision.category == "control-plane":
         extra = "\n" + maintenance_enable_hint()
-    block(f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}{extra}", workspace)
+    block(
+        f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}{extra}",
+        workspace,
+        grok=grok,
+    )
 
 
 def main() -> None:
@@ -423,27 +436,27 @@ def main() -> None:
         print(json.dumps({"continue": True}))
         return
 
-    tool_name = str(hook_input.get("tool_name", ""))
-    raw_tool_input = hook_input.get("tool_input", {})
-    tool_input = raw_tool_input if isinstance(raw_tool_input, dict) else {}
+    grok = is_grok_hook(hook_input)
+    tool_name = hook_tool_name(hook_input)
+    tool_input = hook_tool_input(hook_input)
     workspace = target_workspace(hook_input)
 
     if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
-        handle_write(tool_name, tool_input, workspace)
+        handle_write(tool_name, tool_input, workspace, grok=grok)
         return
 
     if tool_name == "Task":
-        block("Task/Subagent blocked: use taskctl capability instead", workspace)
+        block("Task/Subagent blocked: use taskctl capability instead", workspace, grok=grok)
 
     if tool_name == "Bash":
         bash_cmd = str(tool_input.get("command", ""))
         reason = bash_block_reason(bash_cmd, workspace)
         if reason:
-            block(reason, workspace)
-        print(json.dumps({"continue": True}))
+            block(reason, workspace, grok=grok)
+        allow(grok=grok)
         return
 
-    print(json.dumps({"continue": True}))
+    allow(grok=grok)
 
 
 if __name__ == "__main__":

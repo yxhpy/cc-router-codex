@@ -6,6 +6,17 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.24 - 2026-05-17
+
+- Added Grok hook protocol compatibility for `toolName` / `toolInput` /
+  `workspaceRoot` payloads.
+- Changed Grok PreToolUse blocks to emit `decision=deny`, while preserving
+  Claude's existing `decision=block` / `continue=false` output.
+- Made Grok Stop focus checks return a non-blocking notice with exit code 0,
+  avoiding misleading Stop hook exit code 2 reports.
+- Fixed hook-generated route-token command syntax to use a shell-stable
+  `--route-token=<token>` argument.
+
 ## 0.1.23 - 2026-05-16
 
 - Fixed `test_hooks.py` so hook settings validation works in installed targets

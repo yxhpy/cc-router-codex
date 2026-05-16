@@ -12,7 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import focus_guard
-from hook_context import target_workspace
+from hook_context import is_grok_hook, target_workspace
 
 
 def read_hook_json() -> dict[str, object]:
@@ -39,6 +39,20 @@ def main() -> int:
     decision = focus_guard.stop_decision(workspace)
     if decision.allow:
         print(json.dumps({"continue": True}))
+        return 0
+
+    if is_grok_hook(payload):
+        print(
+            json.dumps(
+                {
+                    "decision": "allow",
+                    "continue": True,
+                    "reason": "GROK_STOP_NOTICE: Stop is non-blocking in Grok; focus remains active.\n"
+                    + decision.reason,
+                    "systemMessage": decision.reason,
+                }
+            )
+        )
         return 0
 
     print(

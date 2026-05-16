@@ -444,8 +444,7 @@ class TaskCtlTests(unittest.TestCase):
                         self.workspace,
                         "--goal",
                         goal,
-                        "--route-token",
-                        token,
+                        f"--route-token={token}",
                         "--json",
                     )
                 )

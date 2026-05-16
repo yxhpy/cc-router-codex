@@ -473,6 +473,64 @@ class HookTests(unittest.TestCase):
         self.assertEqual(allowed_code, 0)
         self.assertTrue(allowed["continue"])
 
+    def test_grok_stop_hook_reports_active_focus_without_exit_2(self) -> None:
+        code, _output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": "Create a focused smoke artifact.", "cwd": str(ROOT)},
+            router_mock(artifacts=["test_report:.claude/artifacts/focus-smoke.md"]),
+        )
+        self.assertEqual(code, 0)
+
+        blocked_code, blocked = run_hook(
+            STOP_HOOK,
+            {"hookEventName": "stop", "workspaceRoot": str(ROOT)},
+            {"GROK_HOOK_EVENT": "stop"},
+        )
+
+        self.assertEqual(blocked_code, 0)
+        self.assertEqual(blocked["decision"], "allow")
+        self.assertTrue(blocked["continue"])
+        self.assertIn("GROK_STOP_NOTICE", blocked["reason"])
+        self.assertIn("FOCUS_GUARD_BLOCK", blocked["reason"])
+
+    def test_grok_pretooluse_bash_payload_blocks_with_deny_decision(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "hookEventName": "pre_tool_use",
+                "workspaceRoot": str(ROOT),
+                "toolName": "run_terminal_cmd",
+                "toolInput": {"command": "echo hello > product.txt"},
+            },
+            {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "deny")
+        self.assertFalse(output["continue"])
+        self.assertIn("Bash file operation blocked", output["reason"])
+        self.assertNotIn("hookSpecificOutput", output)
+        self.assertNotIn("stopReason", output)
+
+    def test_grok_pretooluse_search_replace_payload_blocks_with_deny_decision(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "hookEventName": "pre_tool_use",
+                "workspaceRoot": str(ROOT),
+                "toolName": "search_replace",
+                "toolInput": {"file_path": "sample-page.html"},
+            },
+            {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "deny")
+        self.assertFalse(output["continue"])
+        self.assertIn("sample-page.html", output["reason"])
+        self.assertNotIn("hookSpecificOutput", output)
+        self.assertNotIn("stopReason", output)
+
     def test_user_prompt_uses_payload_cwd_as_target_workspace(self) -> None:
         target_workspace = (ROOT.parent / "target-workspace").resolve()
         code, output = run_hook(

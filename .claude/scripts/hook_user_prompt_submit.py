@@ -56,7 +56,7 @@ def artifact_args(artifacts: list[str]) -> str:
 
 
 def suggested_command(route: llm_router.Route, prompt: str, workspace: str, route_token: str = "") -> str:
-    token_arg = f"--route-token {ps_quote(route_token)} " if route_token else ""
+    token_arg = f"--route-token={ps_quote(route_token)} " if route_token else ""
     return (
         f"{script_command('taskctl.py')} capability "
         f"--role {route.role} "

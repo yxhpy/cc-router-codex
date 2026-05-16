@@ -12,7 +12,7 @@ import json
 import sys
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
-from hook_context import target_workspace
+from hook_context import hook_tool_input, hook_tool_name, is_grok_hook, target_workspace
 from project_paths import script_path
 
 
@@ -23,15 +23,17 @@ def main() -> None:
         print(json.dumps({"continue": True}))
         return
 
-    tool_name = str(payload.get("tool_name", ""))
-    tool_input = payload.get("tool_input", {})
+    grok = is_grok_hook(payload)
+    tool_name = hook_tool_name(payload)
+    tool_input = hook_tool_input(payload)
     if tool_name not in ("Write", "Edit", "MultiEdit", "NotebookEdit") or not isinstance(tool_input, dict):
-        print(json.dumps({"continue": True}))
+        print(json.dumps({"decision": "allow", "continue": True} if grok else {"continue": True}))
         return
 
-    decision = classify_direct_write(str(tool_input.get("file_path", "")))
+    file_path = str(tool_input.get("file_path") or tool_input.get("filePath") or tool_input.get("path") or "")
+    decision = classify_direct_write(file_path)
     if decision.allowed:
-        print(json.dumps({"continue": True}))
+        print(json.dumps({"decision": "allow", "continue": True} if grok else {"continue": True}))
         return
 
     workspace = target_workspace(payload)
@@ -45,16 +47,21 @@ def main() -> None:
     if decision.category == "control-plane":
         reason += "\n" + maintenance_enable_hint()
 
-    print(json.dumps({
+    output = {
+        "decision": "deny" if grok else "block",
         "continue": False,
-        "stopReason": reason,
+        "reason": reason,
         "systemMessage": reason,
-        "hookSpecificOutput": {
+    }
+    if not grok:
+        output["stopReason"] = reason
+        output["hookSpecificOutput"] = {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
             "permissionDecisionReason": reason,
-        },
-    }, ensure_ascii=False))
+        }
+    print(json.dumps(output, ensure_ascii=False))
+    raise SystemExit(2)
 
 
 if __name__ == "__main__":

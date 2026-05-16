@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Shared helpers for Claude hook payload context."""
+"""Shared helpers for Claude/Grok hook payload context."""
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,8 @@ from typing import Any
 WORKSPACE_KEYS = (
     "cwd",
     "workspace",
+    "workspaceRoot",
+    "workspace_root",
     "workingDirectory",
     "working_directory",
     "projectDir",
@@ -17,6 +20,15 @@ WORKSPACE_KEYS = (
     "projectPath",
     "project_path",
 )
+
+GROK_TOOL_ALIASES = {
+    "run_terminal_cmd": "Bash",
+    "search_replace": "Edit",
+    "write": "Write",
+    "write_file": "Write",
+    "task": "Task",
+    "spawn_subagent": "Task",
+}
 
 
 def _normalize_workspace(value: object) -> str | None:
@@ -28,11 +40,48 @@ def _normalize_workspace(value: object) -> str | None:
         return value.strip()
 
 
+def raw_hook_event(payload: dict[str, Any]) -> str:
+    for key in ("hookEventName", "hook_event_name", "event", "eventName", "event_name"):
+        value = payload.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    value = os.environ.get("GROK_HOOK_EVENT")
+    return value.strip() if value else ""
+
+
+def is_grok_hook(payload: dict[str, Any]) -> bool:
+    event = raw_hook_event(payload)
+    return (
+        bool(os.environ.get("GROK_HOOK_EVENT"))
+        or "toolName" in payload
+        or "toolInput" in payload
+        or ("_" in event and event.lower() == event)
+    )
+
+
+def hook_tool_name(payload: dict[str, Any]) -> str:
+    value = payload.get("tool_name")
+    if not isinstance(value, str) or not value.strip():
+        value = payload.get("toolName")
+    if not isinstance(value, str) or not value.strip():
+        return ""
+    name = value.strip()
+    return GROK_TOOL_ALIASES.get(name.lower(), name)
+
+
+def hook_tool_input(payload: dict[str, Any]) -> dict[str, Any]:
+    for key in ("tool_input", "toolInput"):
+        value = payload.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
 def target_workspace(payload: dict[str, Any]) -> str:
     """Return the project workspace that invoked the hook.
 
     The control-plane scripts can live in a fixed repository, but worker tasks
-    must run against the Claude session's project directory.
+    must run against the invoking session's project directory.
     """
 
     for key in WORKSPACE_KEYS:
@@ -40,11 +89,10 @@ def target_workspace(payload: dict[str, Any]) -> str:
         if workspace:
             return workspace
 
-    tool_input = payload.get("tool_input")
-    if isinstance(tool_input, dict):
-        for key in WORKSPACE_KEYS:
-            workspace = _normalize_workspace(tool_input.get(key))
-            if workspace:
-                return workspace
+    tool_input = hook_tool_input(payload)
+    for key in WORKSPACE_KEYS:
+        workspace = _normalize_workspace(tool_input.get(key))
+        if workspace:
+            return workspace
 
     return str(Path.cwd().resolve(strict=False))
