@@ -111,7 +111,7 @@ Classify only the provided JSON payload's command. Do not run commands or sugges
 
 
 def taskctl_guidance(workspace: str) -> str:
-    command_hint = command_catalog.next_command("command", workspace)
+    command_hint = command_catalog.inspect_command("capability", workspace)
     capability_hint = command_catalog.next_command("capability", workspace)
     return f"""Do not write production files directly from Claude.
 Use exactly one atomic control-plane command for the target project workspace.
@@ -135,14 +135,15 @@ which runs the built-in Codex raster backend at .claude/scripts/assetgen_exec.py
 
 
 def block(reason: str, workspace: str, next_command_name: str = "capability") -> None:
-    next_command = command_catalog.next_command(next_command_name, workspace)
-    contract_command = command_catalog.next_command("command", workspace)
+    replacement_command = command_catalog.next_command(next_command_name, workspace)
+    contract_command = command_catalog.inspect_command(next_command_name, workspace)
     message = f"{reason}\n\n{taskctl_guidance(workspace)}"
     print(json.dumps({
         "decision": "block",
         "reason": message,
         "continue": False,
-        "next_command": next_command,
+        "next_command": contract_command,
+        "replacement_command": replacement_command,
         "command_contract": contract_command,
         "stopReason": message,
         "hookSpecificOutput": {

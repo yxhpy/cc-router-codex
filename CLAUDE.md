@@ -46,7 +46,8 @@ These rules apply even when no skill is explicitly invoked.
 - Do not guess control-plane command syntax or read source just to discover a
   command. Use `taskctl.py command <name> --workspace "<workspace>"` or
   `taskctl.py doctor --workspace "<workspace>"`; PreToolUse blocks include
-  `next_command` and `command_contract` fields.
+  directly executable `next_command` / `command_contract` fields and a
+  `replacement_command` template.
 - Do not use fixed workflows, `submit-frontend`, `submit-system`,
   `submit-architecture`, `import-plan`, `run-job`, or dependency chains.
 

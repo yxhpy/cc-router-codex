@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.11`.
+Current release: `v0.1.12`.
 
 ## What It Does
 
@@ -130,8 +130,8 @@ python .claude/scripts/taskctl.py doctor --workspace /path/to/project
 ```
 
 When `PreToolUse` blocks a direct write, the hook response includes
-`next_command` and `command_contract` fields with the current machine's
-absolute command path.
+`next_command` / `command_contract` fields with a directly executable catalog
+lookup command, plus `replacement_command` with the taskctl capability template.
 
 ## Asset Generation
 

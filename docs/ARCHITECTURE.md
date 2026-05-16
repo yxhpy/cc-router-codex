@@ -66,7 +66,8 @@ Claude should not infer control-plane command syntax from source files.
 `taskctl command <name>` returns one command contract with purpose, write
 behavior, examples, and the current machine's executable path. `taskctl doctor`
 prints command and environment diagnostics. PreToolUse blocks include
-`next_command` and `command_contract` fields so the next safe action is explicit.
+`next_command` and `command_contract` fields with a directly executable catalog
+lookup command, plus `replacement_command` with the taskctl capability template.
 
 ## Role Boundaries
 

@@ -26,7 +26,8 @@ skill invocation.
    When command syntax is unclear, run `taskctl.py command <name> --workspace
    <project>` or `taskctl.py doctor --workspace <project>` instead of guessing
    or reading source. PreToolUse block responses include `next_command` and
-   `command_contract` fields for the next safe inspection command.
+   `command_contract` fields for a directly executable catalog lookup, plus
+   `replacement_command` for the taskctl capability template.
 6. Do not use fixed workflows, import-plan, run-job, or dependency chains.
    There is no planner-owned pipeline. How capabilities are combined is decided
    only by the main model between single-step executions.

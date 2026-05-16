@@ -6,6 +6,12 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.12 - 2026-05-16
+
+- Changed PreToolUse block `next_command` to a directly executable
+  `taskctl command <name>` catalog lookup, and moved the capability template to
+  `replacement_command`.
+
 ## 0.1.11 - 2026-05-16
 
 - Added a machine-readable command catalog through

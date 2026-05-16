@@ -109,9 +109,11 @@ class HookTests(unittest.TestCase):
         self.assertEqual(output["decision"], "block")
         self.assertIn("taskctl.py capability", output["reason"])
         self.assertIn("taskctl.py", output["next_command"])
-        self.assertIn(" capability ", output["next_command"])
+        self.assertIn(" command capability ", output["next_command"])
+        self.assertIn("taskctl.py", output["replacement_command"])
+        self.assertIn(" capability ", output["replacement_command"])
         self.assertIn("taskctl.py", output["command_contract"])
-        self.assertIn(" command ", output["command_contract"])
+        self.assertIn(" command capability ", output["command_contract"])
 
     def test_allows_runtime_write_inside_claude(self) -> None:
         code, output = run_hook(

@@ -165,3 +165,7 @@ def names() -> list[str]:
 def next_command(name: str, workspace: str | None = None) -> str:
     contract = get_contract(name, workspace)
     return contract.command if contract else contracts(workspace)["doctor"].command
+
+
+def inspect_command(name: str, workspace: str | None = None) -> str:
+    return next_command("command", workspace).replace("<name>", str(name or "capability").strip() or "capability")
