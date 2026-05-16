@@ -262,7 +262,19 @@ Tests:
 - Draft/deprecated skills are not published.
 - Bridge names are deterministic and point to source directories.
 
-### v0.1.18: Experience Atoms
+### v0.1.18: Installed Skill Checker Hotfix
+
+Goal: keep the `v0.1.17` skill manifest checker usable from installed targets
+that do not carry the source repository's top-level `tools/` directory.
+
+Status: implemented in `v0.1.18`.
+
+Changes:
+
+- Let installed `test_all.py` run `.claude/scripts/skill_manifest_check.py`
+  when `tools/skill_manifest_check.py` is absent.
+
+### v0.1.19: Experience Atoms
 
 Goal: make learned experiences searchable and safer to reuse.
 

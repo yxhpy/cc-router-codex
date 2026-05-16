@@ -59,7 +59,10 @@ def main() -> int:
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "settings.json")], "settings.json", quiet=True)
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "model_policy.json")], "model_policy.json", quiet=True)
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "skill-manifest.json")], "skill-manifest.json", quiet=True)
-    run([py, str(ROOT / "tools" / "skill_manifest_check.py")], "skill_manifest_check.py")
+    source_checker = ROOT / "tools" / "skill_manifest_check.py"
+    installed_checker = SCRIPTS / "skill_manifest_check.py"
+    checker = source_checker if source_checker.is_file() else installed_checker
+    run([py, str(checker)], "skill_manifest_check.py")
 
     if VALIDATOR.exists():
         run([py, str(VALIDATOR), str(ROOT / ".claude" / "skills" / "learned-experience")], "learned-experience skill")
