@@ -170,6 +170,30 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
 
+    def test_allows_package_manager_project_commands(self) -> None:
+        examples = [
+            "npm install",
+            "npm run build",
+            "npm test",
+            "pnpm install",
+            "pnpm run dev",
+            "yarn install",
+            "yarn test",
+            "bun install",
+            "bun run build",
+        ]
+        for command in examples:
+            with self.subTest(command=command):
+                code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": command}})
+                self.assertEqual(code, 0)
+                self.assertTrue(output["continue"])
+
+    def test_blocks_package_manager_output_redirection(self) -> None:
+        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": "npm install > install.log"}})
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+
     def test_blocks_multiedit_outside_claude(self) -> None:
         code, output = run_hook(HOOK, {"tool_name": "MultiEdit", "tool_input": {"file_path": "src/app.js"}})
 

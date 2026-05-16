@@ -6,6 +6,14 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.8 - 2026-05-16
+
+- Allowed common JavaScript project lifecycle commands such as `npm install`,
+  `npm run build`, `pnpm install`, `yarn test`, and `bun run build` through the
+  Bash write guard.
+- Kept direct shell file writes blocked for package-manager commands when they
+  use output redirection or other explicit file-writing operators.
+
 ## 0.1.7 - 2026-05-16
 
 - Ignored Claude background `<task-notification>` prompts in UserPromptSubmit

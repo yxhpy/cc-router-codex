@@ -65,6 +65,9 @@ SAFE_BASH_CMDS = [
     r"^(uname|ps|top|df|du|free)\b",
     r"^(curl|wget)\s+\S+\s*$",
     r"^(tar|zip|unzip|gzip|gunzip)\s.*-[tvl].*",
+    # Project lifecycle commands. These may update dependency caches or build
+    # outputs, but they are not direct Claude-authored product-file writes.
+    r"^(npm|pnpm|yarn|bun)\s+(install|i|ci|add|remove|uninstall|run|test|start|exec|dlx|create|build|dev)\b",
     r"^grep\b",
     r"^rg\b",
 ]
