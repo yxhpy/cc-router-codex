@@ -278,8 +278,74 @@ def review_ambiguous_bash_command(cmd: str, workspace: str) -> tuple[bool, str]:
     return allowed, reason
 
 
-def without_fd_redirects(cmd: str) -> str:
-    return re.sub(r"[0-9]?>&[0-9]+", "", cmd)
+def mask_shell_quoted_text(cmd: str) -> str:
+    """Mask shell-quoted spans so literal prompt text is not scanned as syntax."""
+    chars = list(cmd)
+    quote: str | None = None
+    index = 0
+    while index < len(chars):
+        char = chars[index]
+        if quote:
+            if quote == '"' and char == "\\":
+                chars[index] = " "
+                if index + 1 < len(chars):
+                    chars[index + 1] = " "
+                    index += 2
+                    continue
+            if char == quote:
+                quote = None
+            else:
+                chars[index] = " "
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "\\":
+            chars[index] = " "
+            if index + 1 < len(chars):
+                chars[index + 1] = " "
+                index += 2
+                continue
+        index += 1
+    return "".join(chars)
+
+
+def has_shell_file_redirection(cmd: str) -> bool:
+    quote: str | None = None
+    index = 0
+    while index < len(cmd):
+        char = cmd[index]
+        if quote:
+            if quote == '"' and char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in {"'", '"'}:
+            quote = char
+            index += 1
+            continue
+        if char == "\\":
+            index += 2
+            continue
+        if char == "&" and index + 1 < len(cmd) and cmd[index + 1] == ">":
+            return True
+        if char == ">":
+            target = index + 1
+            if target < len(cmd) and cmd[target] in {">", "|"}:
+                target += 1
+            if target < len(cmd) and cmd[target] == "&":
+                fd_target = target + 1
+                if fd_target < len(cmd) and (cmd[fd_target].isdigit() or cmd[fd_target] == "-"):
+                    index = fd_target + 1
+                    continue
+            return True
+        index += 1
+    return False
 
 
 def bash_block_reason(bash_cmd: str, workspace: str) -> str | None:
@@ -289,16 +355,12 @@ def bash_block_reason(bash_cmd: str, workspace: str) -> str | None:
         return f"Bash file operation blocked: {cmd[:200]}"
 
     safe_command = is_safe_bash_command(cmd)
-    redirection_scan = without_fd_redirects(cmd)
 
-    if re.search(r"(^|[^&])(?:[0-9])?>{1,2}\s*\S", redirection_scan):
-        return f"Bash file operation blocked: {cmd[:200]}"
-    if re.search(r"&>{1,2}\s*\S", redirection_scan):
-        return f"Bash file operation blocked: {cmd[:200]}"
-    if re.search(r"<<.*\S.*(?:>|>>)\s*\S", redirection_scan):
+    if has_shell_file_redirection(cmd):
         return f"Bash file operation blocked: {cmd[:200]}"
 
-    mutating_patterns = [
+    shell_syntax_scan = mask_shell_quoted_text(cmd)
+    shell_mutating_patterns = [
         r"\btee\b",
         r"\btouch\b",
         r"\bcp\b|\bcopy\b",
@@ -312,14 +374,20 @@ def bash_block_reason(bash_cmd: str, workspace: str) -> str | None:
         r"\bStart-BitsTransfer\b.*\b-Destination\b",
         r"\bExport-(Csv|Clixml|Console|PSSession)\b",
         r"\bSet-Item(Property)?\b|\bClear-Item(Property)?\b",
+        r"\b(Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item)\b",
+        r"\bapply_patch\b",
+    ]
+    if any(re.search(pattern, shell_syntax_scan, re.IGNORECASE | re.DOTALL) for pattern in shell_mutating_patterns):
+        return f"Bash file operation blocked: {cmd[:200]}"
+
+    executable_inline_mutating_patterns = [
         r"python.*-c.*open\(",
         r"python.*-c.*\bsqlite3\b.*\b(update|insert|delete|replace|drop|alter|create)\b",
         r"python.*-c.*\bconn\.execute\s*\(\s*[\"']\s*(update|insert|delete|replace|drop|alter|create)\b",
-        r"\b(Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item)\b",
         r"\b\[?(System\.)?IO\.File\]::(WriteAllText|WriteAllLines|AppendAllText|AppendAllLines)\b",
-        r"\bapply_patch\b",
+        r"\b(?:powershell|pwsh)(?:\.exe)?\b.*\b(Set-Content|Add-Content|Out-File|New-Item|Remove-Item|Move-Item|Copy-Item|Rename-Item)\b",
     ]
-    if any(re.search(pattern, cmd, re.IGNORECASE | re.DOTALL) for pattern in mutating_patterns):
+    if not safe_command and any(re.search(pattern, cmd, re.IGNORECASE | re.DOTALL) for pattern in executable_inline_mutating_patterns):
         return f"Bash file operation blocked: {cmd[:200]}"
 
     if safe_command:

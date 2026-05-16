@@ -182,5 +182,6 @@ python .claude\scripts\prompt_template_mcp.py ensure --workspace . --refresh-ver
 | Hook tries to open `.claude/scripts/...` in the current project and fails | Hook command was generated with a relative script path | Reinstall with `v0.1.1` or newer so hooks use absolute installed script paths. |
 | Claude final answer is blocked by `FOCUS_GUARD_BLOCK` | Active goal is not marked complete or exhausted | Run `focus_guard.py complete` with evidence, or `exhausted` after all viable attempts. |
 | Claude keeps retrying the wrong taskctl command | Previous failure state was not restored | Run `taskctl checkpoint-list`, then `taskctl checkpoint-restore <id> --json` and follow the recorded `resume_hint`. |
+| Prompt text with Swift `->` or Markdown `>` is blocked as shell redirection | Installed hook is older than `v0.1.22`, or the arrow was left unquoted in the shell command | Upgrade/reinstall; keep prompt text inside `--prompt "..."` so the shell does not treat `>` as syntax. |
 | Image generation feels slow on the first run | `image-2-prompt` MCP is being installed and smoke-tested | Let the first install finish; later checks use cached readiness. |
 | MCP warns that latest differs from installed | Local `image-2-prompt` commit is behind latest known remote | Review the warning and run the explicit upgrade command when desired. |

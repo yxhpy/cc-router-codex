@@ -243,6 +243,38 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
 
+    def test_allows_swift_arrow_inside_quoted_taskctl_prompt(self) -> None:
+        command = (
+            'python .claude/scripts/taskctl.py capability --role fullstack '
+            '--title "Implement Swift helper" '
+            '--prompt "Implement func makeView() -> some View without changing behavior. '
+            'Document why Set-Content and echo hi > file are unsafe shell examples." '
+            '--artifact implementation_summary:.claude/artifacts/implementation_summary.md '
+            '--workspace "/tmp/swift-app" --goal "Implement Swift helper"'
+        )
+        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": command}})
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_blocks_file_redirection_without_space(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "python .claude/scripts/taskctl.py status 1>status.txt"}},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+
+    def test_blocks_ampersand_file_redirection(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "python .claude/scripts/taskctl.py status 1 &> status.txt"}},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+
     def test_blocks_multiedit_outside_claude(self) -> None:
         code, output = run_hook(HOOK, {"tool_name": "MultiEdit", "tool_input": {"file_path": "src/app.js"}})
 

@@ -6,6 +6,17 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.22 - 2026-05-16
+
+- Fixed Bash PreToolUse redirection detection so quoted prompt text containing
+  Swift arrows (`->`), documentation blockquotes (`>`), or unsafe command
+  examples is not mistaken for shell output redirection.
+- Replaced regex-only output redirection detection with a shell-quote-aware
+  scanner while continuing to block real file redirection such as `>file`,
+  `1>file`, and `&> file`.
+- Kept executable inline write guards for `python -c` and PowerShell mutation
+  commands.
+
 ## 0.1.21 - 2026-05-16
 
 - Added structured `state_input`, `state_output`, and `next_state` fields to
