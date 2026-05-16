@@ -104,6 +104,12 @@ skill invocation.
     `learned-experience` skill with `taskctl.py experience-sync-skill`.
     Wrong, stale, duplicate, or vague lessons must be rejected or pruned instead
     of accumulating forever.
+14a. Bundled skill publication is governed by `.claude/skill-manifest.json`.
+    Draft, deprecated, and private skills must not be published under
+    `.claude/skills/` or `.claude/plugins/*/skills/`. After editing bundled
+    skills or plugin bridges, run `python .claude/scripts/skill_manifest_check.py`
+    from the installed target, or `python tools/skill_manifest_check.py` from
+    the source repository.
 15. For current OpenAI model guidance, use official OpenAI docs as the source of
    truth before changing the policy.
 16. A worker is not successful just because the Codex process exits 0. Required

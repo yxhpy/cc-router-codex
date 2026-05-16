@@ -42,6 +42,8 @@ sequenceDiagram
 | `.claude/scripts/task_input_filter.py` | Validates role, prompt, artifact paths, and role/artifact compatibility. |
 | `.claude/scripts/codex_exec.py` | Runs Codex and writes durable logs instead of relying on stream output. |
 | `.claude/scripts/focus_guard.py` | Stores active goal state and blocks premature final answers. |
+| `.claude/skill-manifest.json` | Source of truth for bundled skill publication and bridge paths. |
+| `tools/skill_manifest_check.py` | Verifies skill manifest coverage and Claude/plugin bridge consistency. |
 | `taskctl checkpoint-*` | Saves and restores resumable job snapshots under `.claude/task-plans/checkpoints/`. |
 | `.claude/scripts/assetgen_exec.py` | Generates raster assets through Codex and records manifests. |
 | `.claude/scripts/prompt_template_mcp.py` | Installs, checks, versions, and queries the image prompt-template MCP. |
@@ -94,6 +96,17 @@ evidence.
 
 The installer never creates or copies `CONTEXT.md` or `docs/adr/`; they are
 project-owned docs created only through explicit documentation work.
+
+## Skill Source Governance
+
+`.claude/skill-manifest.json` defines which bundled skills are distributable,
+draft, deprecated, or private. Distributable skills list their source directory
+and deterministic bridge paths such as `.claude/skills/<name>` and
+`.claude/plugins/<plugin>/skills/<name>`.
+
+`tools/skill_manifest_check.py` fails when a published skill is missing from the
+manifest, a non-distributable skill is published, bridge names drift, or plugin
+bridge contents differ from the source directory.
 
 ## Artifact Quality
 

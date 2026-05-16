@@ -151,6 +151,16 @@ semantic role-boundary judgment:
 - Do not create `CONTEXT.md` or `docs/adr/` unless the user explicitly asks for
   project context docs, a glossary, or an ADR.
 
+## Skill Governance
+
+- `.claude/skill-manifest.json` is the source of truth for bundled skill
+  publication, source directories, and Claude/plugin bridge paths.
+- Draft, deprecated, and private skills must not appear under `.claude/skills/`
+  or `.claude/plugins/*/skills/`.
+- After adding, moving, or regenerating bundled skills, run
+  `python .claude/scripts/skill_manifest_check.py` in an installed target, or
+  `python tools/skill_manifest_check.py` in the source repository.
+
 ## Completion Rules
 
 - A task is not successful just because Codex exits successfully. Required

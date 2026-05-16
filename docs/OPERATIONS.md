@@ -72,6 +72,25 @@ not create them. When present, worker prompts ask Codex to read them before
 choosing vocabulary, naming, or architecture decisions. Create or update them
 only through an explicit docs capability requested by the user.
 
+## Skill Manifest Check
+
+Run the skill source-of-truth checker after adding, moving, drafting, or
+deprecating bundled skills:
+
+```powershell
+python tools\skill_manifest_check.py
+```
+
+Installed targets can run the installed checker:
+
+```powershell
+python .claude\scripts\skill_manifest_check.py
+```
+
+The checker verifies `.claude/skill-manifest.json`, published skill coverage,
+bucket rules, deterministic bridge paths, and plugin bridge/source content
+consistency.
+
 ## Upgrade A Target
 
 Re-run the installer against the same target:

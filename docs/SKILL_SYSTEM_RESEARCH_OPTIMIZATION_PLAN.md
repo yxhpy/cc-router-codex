@@ -248,6 +248,8 @@ Tests:
 
 Goal: prevent skill drift across Claude/Codex surfaces.
 
+Status: implemented in `v0.1.17`.
+
 Changes:
 
 - Add a skill manifest checker.

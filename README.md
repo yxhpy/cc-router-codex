@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.16`.
+Current release: `v0.1.17`.
 
 ## What It Does
 
@@ -28,6 +28,7 @@ and fast local checks before production work is allowed to finish.
 | Failure resume | `taskctl checkpoint-*` saves, restores, lists, and reports resumable job state after failed or blocked work. |
 | Artifact quality | `taskctl audit --quality` checks supported Markdown reports for role-specific evidence structure. |
 | Project context | Workers read optional `CONTEXT.md` and `docs/adr/` when present; installers do not create them. |
+| Skill governance | `.claude/skill-manifest.json` and `tools/skill_manifest_check.py` prevent Claude/plugin skill drift. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -99,6 +100,7 @@ after explicit confirmation.
 |   |-- plugins/             bundled Claude plugin surface
 |   `-- skills/              bundled Claude skill instructions
 |-- docs/                    architecture and operations guides
+|-- tools/                   repository maintenance and governance checks
 |-- install.py               local installer
 |-- install.ps1              Windows remote bootstrapper
 |-- install.sh               POSIX remote bootstrapper
@@ -165,6 +167,13 @@ architecture decisions. Worker prompts treat both as soft inputs: use them when
 present, continue when absent, and do not create them unless the user
 explicitly asks for project-context or ADR documentation.
 
+## Skill Governance
+
+Bundled skills are governed by `.claude/skill-manifest.json`. Run
+`python tools/skill_manifest_check.py` to verify that every published skill is
+listed, draft/deprecated/private skills are not published, bridge paths are
+deterministic, and plugin mirrors match their source directories.
+
 ## Asset Generation
 
 Asset generation uses `.claude/scripts/assetgen_exec.py`. Before Codex creates
@@ -226,6 +235,7 @@ installer rewriting, policy checks, and Python compilation.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Operations](docs/OPERATIONS.md)
 - [Project Context](docs/PROJECT_CONTEXT.md)
+- [Skill Source Of Truth](docs/SKILL_SOURCE_OF_TRUTH.md)
 - [Versioning](VERSIONING.md)
 - [Changelog](CHANGELOG.md)
 - [Contributing](CONTRIBUTING.md)

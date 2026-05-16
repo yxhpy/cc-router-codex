@@ -39,6 +39,7 @@ def main() -> int:
         "test_assetgen_exec.py",
         "test_prompt_template_mcp.py",
         "test_install.py",
+        "test_skill_manifest_check.py",
         "test_sync_design_refs.py",
         "test_safety_filter.py",
     ]
@@ -53,9 +54,12 @@ def main() -> int:
     if args.real_claude_cli:
         run([py, "-B", str(SCRIPTS / "test_claude_cli_flow.py")], "test_claude_cli_flow.py")
 
-    run([py, "-B", "-m", "py_compile", str(ROOT / "install.py"), *[str(path) for path in SCRIPTS.glob("*.py")]], "py_compile")
+    tool_scripts = [str(path) for path in (ROOT / "tools").glob("*.py")]
+    run([py, "-B", "-m", "py_compile", str(ROOT / "install.py"), *[str(path) for path in SCRIPTS.glob("*.py")], *tool_scripts], "py_compile")
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "settings.json")], "settings.json", quiet=True)
     run([py, "-m", "json.tool", str(ROOT / ".claude" / "model_policy.json")], "model_policy.json", quiet=True)
+    run([py, "-m", "json.tool", str(ROOT / ".claude" / "skill-manifest.json")], "skill-manifest.json", quiet=True)
+    run([py, str(ROOT / "tools" / "skill_manifest_check.py")], "skill_manifest_check.py")
 
     if VALIDATOR.exists():
         run([py, str(VALIDATOR), str(ROOT / ".claude" / "skills" / "learned-experience")], "learned-experience skill")

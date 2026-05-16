@@ -6,6 +6,21 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.17 - 2026-05-16
+
+- Added `.claude/skill-manifest.json` as the source of truth for bundled skill
+  publication status, source paths, and Claude/plugin bridge paths.
+- Added `tools/skill_manifest_check.py` to verify manifest coverage, bucket
+  rules, deterministic bridge names, and byte-for-byte bridge/source
+  consistency.
+- Added `docs/SKILL_SOURCE_OF_TRUTH.md` documenting distributable, draft,
+  deprecated, and private skill buckets.
+- Added regression coverage for missing published manifest entries,
+  non-distributable published skills, plugin bridge name drift, and current
+  repository manifest health.
+- Extended `test_all.py` to run the skill manifest checker and compile tool
+  scripts.
+
 ## 0.1.16 - 2026-05-16
 
 - Added a worker prompt soft contract for optional `CONTEXT.md` and

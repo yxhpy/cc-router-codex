@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "buckets": {
+    "distributable": "Published to Claude skill and plugin bridge surfaces.",
+    "draft": "Work in progress; must not be published to bundled skill surfaces.",
+    "deprecated": "Retained for history only; must not be published to bundled skill surfaces.",
+    "private": "Local/private only; must not be published to bundled skill surfaces."
+  },
+  "skills": [
+    {
+      "name": "decompose",
+      "bucket": "distributable",
+      "source": ".claude/skills/decompose",
+      "bridges": [
+        {
+          "surface": "claude",
+          "path": ".claude/skills/decompose"
+        },
+        {
+          "surface": "codex-plugin",
+          "plugin": "task-decompose",
+          "path": ".claude/plugins/task-decompose/skills/decompose"
+        }
+      ]
+    },
+    {
+      "name": "learned-experience",
+      "bucket": "distributable",
+      "source": ".claude/skills/learned-experience",
+      "generated_by": ".claude/scripts/taskctl.py experience-sync-skill",
+      "bridges": [
+        {
+          "surface": "claude",
+          "path": ".claude/skills/learned-experience"
+        },
+        {
+          "surface": "codex-plugin",
+          "plugin": "task-decompose",
+          "path": ".claude/plugins/task-decompose/skills/learned-experience"
+        }
+      ]
+    }
+  ]
+}
