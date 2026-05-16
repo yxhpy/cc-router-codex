@@ -9,6 +9,7 @@ import re
 import sys
 from typing import Any
 
+import command_catalog
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import target_workspace
 from llm_router import (
@@ -19,7 +20,7 @@ from llm_router import (
     load_project_env,
     provider_mode,
 )
-from project_paths import parse_env_file, python_command, script_path
+from project_paths import parse_env_file
 
 
 SAFE_SCRIPT_NAMES = (
@@ -110,11 +111,16 @@ Classify only the provided JSON payload's command. Do not run commands or sugges
 
 
 def taskctl_guidance(workspace: str) -> str:
+    command_hint = command_catalog.next_command("command", workspace)
+    capability_hint = command_catalog.next_command("capability", workspace)
     return f"""Do not write production files directly from Claude.
 Use exactly one atomic control-plane command for the target project workspace.
 Required command: taskctl.py capability.
 
-{python_command()} "{script_path('taskctl.py')}" capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace "{workspace}" --goal "<user goal>"
+{capability_hint}
+
+For exact local command contracts, run:
+{command_hint}
 
 Run the absolute Python command directly. Do not use cmd-only `cd /d`, and do
 not change into the control-plane repository unless it is the user's actual
@@ -128,12 +134,16 @@ which runs the built-in Codex raster backend at .claude/scripts/assetgen_exec.py
 """
 
 
-def block(reason: str, workspace: str) -> None:
+def block(reason: str, workspace: str, next_command_name: str = "capability") -> None:
+    next_command = command_catalog.next_command(next_command_name, workspace)
+    contract_command = command_catalog.next_command("command", workspace)
     message = f"{reason}\n\n{taskctl_guidance(workspace)}"
     print(json.dumps({
         "decision": "block",
         "reason": message,
         "continue": False,
+        "next_command": next_command,
+        "command_contract": contract_command,
         "stopReason": message,
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",

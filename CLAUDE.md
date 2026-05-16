@@ -43,6 +43,10 @@ These rules apply even when no skill is explicitly invoked.
   avoid repeating the same LLM route/guard decision for an unchanged step.
 - Do not manually expand normal work into `submit-auto`, `filter-input`,
   `enqueue`, and `run-next`. Those commands are debugging/recovery primitives.
+- Do not guess control-plane command syntax or read source just to discover a
+  command. Use `taskctl.py command <name> --workspace "<workspace>"` or
+  `taskctl.py doctor --workspace "<workspace>"`; PreToolUse blocks include
+  `next_command` and `command_contract` fields.
 - Do not use fixed workflows, `submit-frontend`, `submit-system`,
   `submit-architecture`, `import-plan`, `run-job`, or dependency chains.
 

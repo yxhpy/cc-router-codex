@@ -6,6 +6,15 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.11 - 2026-05-16
+
+- Added a machine-readable command catalog through
+  `.claude/scripts/command_catalog.py`.
+- Added `taskctl command` and `taskctl doctor` so Claude can discover exact
+  local commands without reading source or retrying guessed syntax.
+- Added `next_command` and `command_contract` fields to PreToolUse block
+  responses, pointing to the current machine's safe follow-up command.
+
 ## 0.1.10 - 2026-05-16
 
 - Added focused non-implementation roles for `debugger`, `operator`,

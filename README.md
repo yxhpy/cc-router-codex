@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.10`.
+Current release: `v0.1.11`.
 
 ## What It Does
 
@@ -23,6 +23,7 @@ and fast local checks before production work is allowed to finish.
 | Task routing | `UserPromptSubmit` classifies the user's goal and emits a `taskctl.py capability` command. |
 | Write control | `PreToolUse` blocks direct product writes, allows known lifecycle commands, and asks `gpt-5.4-mini` to review ambiguous Bash commands. |
 | Focus guard | `Stop` blocks final answers until the active goal is marked complete or exhausted with evidence. |
+| Command catalog | `taskctl command` and `taskctl doctor` print exact local commands so Claude does not need to guess syntax. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -118,6 +119,19 @@ flowchart LR
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the component contract and
 [docs/OPERATIONS.md](docs/OPERATIONS.md) for install, upgrade, and verification
 runbooks.
+
+## Command Contracts
+
+Use the catalog instead of guessing control-plane syntax:
+
+```sh
+python .claude/scripts/taskctl.py command capability --workspace /path/to/project
+python .claude/scripts/taskctl.py doctor --workspace /path/to/project
+```
+
+When `PreToolUse` blocks a direct write, the hook response includes
+`next_command` and `command_contract` fields with the current machine's
+absolute command path.
 
 ## Asset Generation
 

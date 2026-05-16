@@ -23,6 +23,10 @@ skill invocation.
 5. Do not manually split normal work into `submit-auto`, `filter-input`,
    `enqueue`, and `run-next`. Those commands are debugging/recovery primitives,
    not the default user-facing control path.
+   When command syntax is unclear, run `taskctl.py command <name> --workspace
+   <project>` or `taskctl.py doctor --workspace <project>` instead of guessing
+   or reading source. PreToolUse block responses include `next_command` and
+   `command_contract` fields for the next safe inspection command.
 6. Do not use fixed workflows, import-plan, run-job, or dependency chains.
    There is no planner-owned pipeline. How capabilities are combined is decided
    only by the main model between single-step executions.

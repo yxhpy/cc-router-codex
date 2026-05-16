@@ -88,6 +88,33 @@ class TaskCtlTests(unittest.TestCase):
         self.assertEqual(payload["tasks"], [])
         self.assertEqual(payload["progress"]["total"], 0)
 
+    def test_command_contract_outputs_local_capability_command(self) -> None:
+        payload = json.loads(
+            self.run_cli(
+                "command",
+                "capability",
+                "--workspace",
+                self.workspace,
+                "--json",
+            )
+        )
+
+        self.assertEqual(payload["name"], "capability")
+        self.assertIn("taskctl.py", payload["command"])
+        self.assertIn("--workspace", payload["command"])
+        self.assertIn(self.workspace, payload["command"])
+        self.assertIn("<role>", payload["command"])
+
+    def test_doctor_lists_command_catalog(self) -> None:
+        payload = json.loads(self.run_cli("doctor", "--workspace", self.workspace, "--json"))
+
+        self.assertTrue(payload["ok"])
+        self.assertEqual(payload["workspace"], str(Path(self.workspace).resolve()))
+        self.assertIn("capability", payload["commands"])
+        self.assertIn("doctor", payload["commands"])
+        self.assertIn("taskctl.py", payload["next_command"])
+        self.assertIn(" command ", payload["next_command"])
+
     def test_specialized_nonimplementation_roles_are_cli_accepted(self) -> None:
         examples = {
             "debugger": ("Diagnose failure", "Reproduce the failure, inspect logs, and record the debug_report artifact.", "debug_report:.claude/artifacts/debug_report.md"),

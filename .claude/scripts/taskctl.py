@@ -16,6 +16,7 @@ from contextlib import closing
 import json
 import os
 import re
+import shutil
 import sqlite3
 import sys
 from datetime import datetime, timezone
@@ -23,6 +24,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import model_policy
+import command_catalog
 from project_paths import REPO_ROOT, script_command
 import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
@@ -1916,6 +1918,78 @@ def init_db(args: argparse.Namespace) -> None:
     print(f"DB initialized: {db_path(args.db)}")
 
 
+def print_command_contract(contract: dict[str, Any]) -> None:
+    print(f"{contract['name']}: {contract['summary']}")
+    print(f"Command: {contract['command']}")
+    print(f"Writes: {contract['writes']}")
+    print(f"Use when: {contract['use_when']}")
+    print(f"Failure hint: {contract['failure_hint']}")
+    examples = contract.get("examples") or []
+    if examples:
+        print("Examples:")
+        for item in examples:
+            print(f"  {item}")
+
+
+def show_command_contract(args: argparse.Namespace) -> int:
+    workspace = args.workspace or default_workspace()
+    if args.list or not args.name:
+        payload = {"commands": command_catalog.names()}
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print("\n".join(payload["commands"]))
+        return 0
+
+    contract = command_catalog.get_contract(args.name, workspace)
+    if contract is None:
+        available = ", ".join(command_catalog.names())
+        raise SystemExit(f"ERROR: unknown command contract: {args.name}. Available: {available}")
+    payload = contract.to_dict()
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print_command_contract(payload)
+    return 0
+
+
+def version_text() -> str:
+    version_path = REPO_ROOT / "VERSION"
+    if not version_path.exists():
+        return ""
+    return version_path.read_text(encoding="utf-8", errors="replace").strip()
+
+
+def doctor(args: argparse.Namespace) -> int:
+    workspace = args.workspace or default_workspace()
+    db = db_path(args.db)
+    payload = {
+        "ok": True,
+        "version": version_text(),
+        "workspace": str(Path(workspace).expanduser().resolve(strict=False)),
+        "python": sys.executable,
+        "taskctl_script": str(SCRIPT_DIR / "taskctl.py"),
+        "focus_guard_script": str(SCRIPT_DIR / "focus_guard.py"),
+        "db": str(db),
+        "db_exists": db.exists(),
+        "codex": shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe") or "",
+        "command_count": len(command_catalog.names()),
+        "commands": command_catalog.names(),
+        "next_command": command_catalog.next_command("command", workspace),
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"cc-router-codex {payload['version'] or 'unknown'}")
+        print(f"Workspace: {payload['workspace']}")
+        print(f"Task DB: {payload['db']} ({'exists' if payload['db_exists'] else 'missing'})")
+        print(f"Python: {payload['python']}")
+        print(f"Codex: {payload['codex'] or 'not found'}")
+        print("Commands: " + ", ".join(payload["commands"]))
+        print(f"Inspect a command: {payload['next_command']}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="SQLite control plane for Codex worker tasks")
     parser.add_argument("--db", default=None, help="SQLite database path (default: .claude/taskctl.sqlite3)")
@@ -1923,6 +1997,18 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("init", help="initialize the SQLite database")
     p.set_defaults(func=init_db)
+
+    p = sub.add_parser("command", help="print a machine-readable command contract")
+    p.add_argument("name", nargs="?", help="command contract name, e.g. capability")
+    p.add_argument("-w", "--workspace", default=None)
+    p.add_argument("--list", action="store_true")
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=show_command_contract)
+
+    p = sub.add_parser("doctor", help="show command and environment diagnostics")
+    p.add_argument("-w", "--workspace", default=None)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=doctor)
 
     p = sub.add_parser("submit-atomic", help="debug/recovery: create an empty job without executing a capability")
     p.add_argument("goal")

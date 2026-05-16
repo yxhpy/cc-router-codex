@@ -37,6 +37,7 @@ sequenceDiagram
 | `.claude/scripts/hook_user_prompt_submit.py` | Converts the raw user goal into focused routing context. |
 | `.claude/scripts/llm_router.py` | Chooses the role and target artifact contract. |
 | `.claude/scripts/taskctl.py` | Main command surface for controlled execution. |
+| `.claude/scripts/command_catalog.py` | Machine-readable command contracts for exact local command discovery. |
 | `.claude/scripts/task_input_filter.py` | Validates role, prompt, artifact paths, and role/artifact compatibility. |
 | `.claude/scripts/codex_exec.py` | Runs Codex and writes durable logs instead of relying on stream output. |
 | `.claude/scripts/focus_guard.py` | Stores active goal state and blocks premature final answers. |
@@ -58,6 +59,14 @@ Installers copy the distributable control plane, generate local machine state,
 and rewrite hook commands to absolute installed script paths. This keeps global
 and project-level installs independent of the shell's current working
 directory.
+
+## Command Contracts
+
+Claude should not infer control-plane command syntax from source files.
+`taskctl command <name>` returns one command contract with purpose, write
+behavior, examples, and the current machine's executable path. `taskctl doctor`
+prints command and environment diagnostics. PreToolUse blocks include
+`next_command` and `command_contract` fields so the next safe action is explicit.
 
 ## Role Boundaries
 
