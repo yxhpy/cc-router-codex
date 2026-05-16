@@ -111,6 +111,8 @@ class TaskCtlTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(payload["workspace"], str(Path(self.workspace).resolve()))
         self.assertIn("capability", payload["commands"])
+        self.assertIn("checkpoint-save", payload["commands"])
+        self.assertIn("checkpoint-restore", payload["commands"])
         self.assertIn("doctor", payload["commands"])
         self.assertIn("taskctl.py", payload["next_command"])
         self.assertIn(" command ", payload["next_command"])
@@ -440,6 +442,57 @@ class TaskCtlTests(unittest.TestCase):
 
         self.assertTrue(audit["complete"])
         self.assertEqual(audit["workflow"], taskctl.ATOMIC_WORKFLOW)
+
+    def test_audit_exposes_resume_hint_for_missing_artifact(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id, artifact="debug_report:.claude/artifacts/debug_report.md")
+        self.run_cli("fail-task", str(task_id), "--summary", "worker could not reproduce")
+
+        code, output = self.run_cli_result("audit", str(job_id), "--json")
+        self.assertEqual(code, 1)
+        audit = json.loads(output)
+
+        self.assertFalse(audit["complete"])
+        self.assertEqual(audit["next_role"], "fullstack")
+        self.assertIn("debug_report:.claude/artifacts/debug_report.md", audit["next_artifacts"])
+        self.assertIn("retry", audit["resume_hint"].lower())
+
+    def test_checkpoint_save_restore_and_report_capture_job_state(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id, artifact="debug_report:.claude/artifacts/debug_report.md")
+        self.run_cli("fail-task", str(task_id), "--summary", "worker could not reproduce")
+
+        saved = json.loads(
+            self.run_cli(
+                "checkpoint-save",
+                "--job-id",
+                str(job_id),
+                "--title",
+                "Resume failed debug report",
+                "--json",
+            )
+        )
+
+        checkpoint_path = Path(saved["path"])
+        self.assertTrue(checkpoint_path.exists())
+        self.assertIn(".claude/task-plans/checkpoints", checkpoint_path.as_posix())
+        contents = checkpoint_path.read_text(encoding="utf-8")
+        self.assertIn("Resume failed debug report", contents)
+        self.assertIn("worker could not reproduce", contents)
+        self.assertIn("debug_report:.claude/artifacts/debug_report.md", contents)
+
+        listed = json.loads(self.run_cli("checkpoint-list", "--workspace", self.workspace, "--json"))
+        self.assertEqual(listed["checkpoints"][0]["id"], saved["id"])
+
+        restored = json.loads(self.run_cli("checkpoint-restore", str(saved["id"]), "--json"))
+        self.assertEqual(restored["id"], saved["id"])
+        self.assertIn("## User Goal", restored["content"])
+        self.assertIn("Resume failed debug report", restored["title"])
+
+        report = json.loads(self.run_cli("checkpoint-report", "--job-id", str(job_id), "--json"))
+        self.assertEqual(report["job_id"], job_id)
+        self.assertEqual(report["checkpoint_count"], 1)
+        self.assertIn("Resume failed debug report", report["content"])
 
     def test_cancel_job_finishes_running_run_records(self) -> None:
         job_id = self.submit_job()

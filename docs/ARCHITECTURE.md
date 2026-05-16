@@ -41,6 +41,7 @@ sequenceDiagram
 | `.claude/scripts/task_input_filter.py` | Validates role, prompt, artifact paths, and role/artifact compatibility. |
 | `.claude/scripts/codex_exec.py` | Runs Codex and writes durable logs instead of relying on stream output. |
 | `.claude/scripts/focus_guard.py` | Stores active goal state and blocks premature final answers. |
+| `taskctl checkpoint-*` | Saves and restores resumable job snapshots under `.claude/task-plans/checkpoints/`. |
 | `.claude/scripts/assetgen_exec.py` | Generates raster assets through Codex and records manifests. |
 | `.claude/scripts/prompt_template_mcp.py` | Installs, checks, versions, and queries the image prompt-template MCP. |
 
@@ -73,6 +74,14 @@ behavior, examples, and the current machine's executable path. `taskctl doctor`
 prints command and environment diagnostics. PreToolUse blocks include
 `next_command` and `command_contract` fields with a directly executable catalog
 lookup command, plus `replacement_command` with the taskctl capability template.
+
+## Failure Resume
+
+Incomplete audit payloads include `next_role`, `next_artifacts`,
+`next_command`, and `resume_hint`. `taskctl checkpoint-save` turns that state
+into a durable Markdown snapshot plus a SQLite row; `checkpoint-restore` brings
+it back in a later session, and `checkpoint-report` merges multiple checkpoints
+for handoff or closure.
 
 ## Role Boundaries
 

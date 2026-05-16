@@ -6,6 +6,17 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.14 - 2026-05-16
+
+- Added resumable task checkpoints through `taskctl checkpoint-save`,
+  `checkpoint-list`, `checkpoint-restore`, and `checkpoint-report`.
+- Added command catalog contracts for checkpoint save/list/restore/report so
+  Claude can recover failed or blocked work without guessing command syntax.
+- Extended `taskctl audit` payloads with `next_role`, `next_artifacts`,
+  `next_command`, and `resume_hint` for incomplete jobs.
+- Added regression coverage for checkpoint persistence, restore, reports, and
+  audit recovery hints.
+
 ## 0.1.13 - 2026-05-16
 
 - Set Claude Code project permissions to `defaultMode=bypassPermissions` by

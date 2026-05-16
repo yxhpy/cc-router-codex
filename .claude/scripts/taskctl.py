@@ -207,6 +207,21 @@ CREATE TABLE IF NOT EXISTS experiences (
 CREATE INDEX IF NOT EXISTS idx_experiences_status ON experiences(status);
 CREATE INDEX IF NOT EXISTS idx_experiences_workflow_role ON experiences(workflow, role);
 CREATE INDEX IF NOT EXISTS idx_experiences_job_task ON experiences(job_id, task_id);
+
+CREATE TABLE IF NOT EXISTS checkpoints (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id INTEGER NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    path TEXT NOT NULL,
+    status TEXT NOT NULL,
+    next_role TEXT NOT NULL DEFAULT '',
+    next_command TEXT NOT NULL DEFAULT '',
+    resume_hint TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_checkpoints_job ON checkpoints(job_id);
+CREATE INDEX IF NOT EXISTS idx_checkpoints_created ON checkpoints(created_at);
 """
 
 
@@ -282,6 +297,10 @@ def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 
 def artifact_dir(job_id: int) -> str:
     return f".claude/artifacts/job-{job_id}"
+
+
+def checkpoint_dir(workspace: str) -> Path:
+    return Path(workspace) / ".claude" / "task-plans" / "checkpoints"
 
 
 def emit_event(
@@ -1795,6 +1814,58 @@ def resolve_artifact_path(workspace: str, artifact_path: str) -> Path:
     return Path(workspace) / path
 
 
+def artifact_spec_string(kind: str, path: str) -> str:
+    return f"{kind}:{path}" if path else kind
+
+
+def task_required_artifact_strings(task: sqlite3.Row | dict[str, Any]) -> list[str]:
+    return [
+        artifact_spec_string(kind, path)
+        for kind, path in artifact_specs_from_json(str(task["required_artifacts_json"] or "[]"))
+    ]
+
+
+def audit_resume_fields(
+    job: sqlite3.Row,
+    tasks: list[sqlite3.Row],
+    complete: bool,
+) -> dict[str, Any]:
+    if complete:
+        return {"next_role": "", "next_artifacts": [], "next_command": "", "resume_hint": ""}
+
+    unfinished = [task for task in tasks if task["status"] != "done"]
+    candidate = unfinished[0] if unfinished else (tasks[-1] if tasks else None)
+    if candidate is None:
+        return {
+            "next_role": "",
+            "next_artifacts": [],
+            "next_command": command_catalog.next_command("capability", job["workspace"]),
+            "resume_hint": "Create one bounded capability step for the remaining work.",
+        }
+
+    next_role = str(candidate["role"])
+    next_artifacts = task_required_artifact_strings(candidate)
+    status = str(candidate["status"])
+    if status in {"failed", "failed_retryable", "failed_terminal", "blocked"}:
+        next_command = f"{script_command('taskctl.py')} retry-task {candidate['id']}"
+        resume_hint = (
+            f"Retry task {candidate['id']} after inspecting status/audit, or run one bounded "
+            f"{next_role} capability to produce: {', '.join(next_artifacts) or 'the missing artifact'}."
+        )
+    elif status == "queued":
+        next_command = f"{script_command('taskctl.py')} run-next {job['id']}"
+        resume_hint = f"Run the queued {next_role} task and verify required artifacts."
+    else:
+        next_command = f"{script_command('taskctl.py')} status {job['id']}"
+        resume_hint = f"Inspect task {candidate['id']} ({status}) before deciding the next bounded capability."
+    return {
+        "next_role": next_role,
+        "next_artifacts": next_artifacts,
+        "next_command": next_command,
+        "resume_hint": resume_hint,
+    }
+
+
 def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
     load_job(conn, job_id)
     refresh_job_status(conn, job_id)
@@ -1835,7 +1906,10 @@ def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
         for kind, expected_path in task_specs:
             candidates = by_kind.get(kind, [])
             if not candidates:
-                missing_artifact_kinds.append(f"T{task['id']}:{kind}")
+                if expected_path:
+                    missing_artifact_kinds.append(f"T{task['id']}:{kind}:{expected_path}")
+                else:
+                    missing_artifact_kinds.append(f"T{task['id']}:{kind}")
                 continue
             if expected_path:
                 candidates = [
@@ -1863,6 +1937,7 @@ def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
         and not missing_artifact_kinds
         and not missing_artifact_files
     )
+    resume = audit_resume_fields(job, tasks, complete)
     return {
         "job_id": job_id,
         "job_status": job["status"],
@@ -1876,6 +1951,7 @@ def audit_payload(conn: sqlite3.Connection, job_id: int) -> dict[str, Any]:
         "artifacts": artifacts,
         "reviews": [row_to_dict(row) for row in reviews],
         "experience_counts": experience_counts,
+        **resume,
         "complete": complete,
     }
 
@@ -1900,6 +1976,12 @@ def print_audit_payload(payload: dict[str, Any]) -> None:
         print("Reviews: none recorded")
     if experience_counts:
         print("Experiences: " + ", ".join(f"{key}={value}" for key, value in sorted(experience_counts.items())))
+    if not payload["complete"] and payload.get("resume_hint"):
+        print("Next role: " + (payload.get("next_role") or "-"))
+        next_artifacts = payload.get("next_artifacts") or []
+        if next_artifacts:
+            print("Next artifacts: " + ", ".join(next_artifacts))
+        print("Resume hint: " + payload["resume_hint"])
 
 
 def audit(args: argparse.Namespace) -> int:
@@ -1910,6 +1992,224 @@ def audit(args: argparse.Namespace) -> int:
     else:
         print_audit_payload(payload)
     return 0 if payload["complete"] else 1
+
+
+def slugify(value: str, fallback: str = "checkpoint") -> str:
+    text = re.sub(r"[^0-9A-Za-z\u4e00-\u9fff_-]+", "-", str(value or "").strip().lower())
+    text = re.sub(r"-{2,}", "-", text).strip("-_")
+    return text[:80] or fallback
+
+
+def yaml_string(value: Any) -> str:
+    return json.dumps(str(value or ""), ensure_ascii=False)
+
+
+def latest_run_for_task(conn: sqlite3.Connection, task_id: int) -> sqlite3.Row | None:
+    return conn.execute(
+        "SELECT * FROM runs WHERE task_id = ? ORDER BY id DESC LIMIT 1",
+        (task_id,),
+    ).fetchone()
+
+
+def checkpoint_markdown(
+    conn: sqlite3.Connection,
+    job: sqlite3.Row,
+    tasks: list[sqlite3.Row],
+    audit_data: dict[str, Any],
+    title: str,
+    timestamp: str,
+) -> str:
+    task = next((item for item in tasks if item["status"] != "done"), tasks[-1] if tasks else None)
+    last_run = latest_run_for_task(conn, int(task["id"])) if task is not None else None
+    completed_artifacts = [
+        f"- {artifact['kind']}:{artifact['path']}"
+        for artifact in audit_data["artifacts"]
+        if not audit_data["missing_artifact_files"]
+    ]
+    missing_items = [
+        *(f"- {item}" for item in audit_data["missing_artifact_kinds"]),
+        *(f"- {item['kind']}:{item['path']}" for item in audit_data["missing_artifact_files"]),
+    ]
+    failed_command = ""
+    if last_run is not None and last_run["exit_code"] not in (None, 0):
+        failed_command = str(last_run["command"] or "")
+    blocker = ""
+    if task is not None and task["status"] != "done":
+        blocker = str(task["result_summary"] or task["status"])
+    frontmatter = [
+        "---",
+        f"job_id: {job['id']}",
+        f"timestamp: {yaml_string(timestamp)}",
+        f"title: {yaml_string(title)}",
+        f"source_role: {yaml_string(task['role'] if task is not None else '')}",
+        f"status: {yaml_string('resolved' if audit_data['complete'] else 'in-progress')}",
+        f"next_role: {yaml_string(audit_data.get('next_role', ''))}",
+        f"next_command: {yaml_string(audit_data.get('next_command', ''))}",
+        "---",
+        "",
+    ]
+    sections = [
+        "# Taskctl Checkpoint",
+        "",
+        "## User Goal",
+        str(job["goal"] or ""),
+        "",
+        "## Current State",
+        f"- Job: {job['id']} ({job['status']})",
+        f"- Audit complete: {audit_data['complete']}",
+        f"- Source role: {task['role'] if task is not None else '-'}",
+        "",
+        "## Completed Artifacts",
+        "\n".join(completed_artifacts) if completed_artifacts else "(none recorded)",
+        "",
+        "## Missing Artifacts",
+        "\n".join(missing_items) if missing_items else "(none)",
+        "",
+        "## Last Failed Command",
+        failed_command or "(none recorded)",
+        "",
+        "## Known Blocker",
+        blocker or "(none recorded)",
+        "",
+        "## Recommended Next Step",
+        str(audit_data.get("resume_hint") or "(none)"),
+        "",
+    ]
+    return "\n".join([*frontmatter, *sections])
+
+
+def save_checkpoint(args: argparse.Namespace) -> int:
+    with closing(connect(args.db)) as conn:
+        job = load_job(conn, args.job_id)
+        tasks = tasks_for_job(conn, args.job_id)
+        audit_data = audit_payload(conn, args.job_id)
+        timestamp = now()
+        title = args.title.strip() if args.title else f"job-{args.job_id}"
+        directory = checkpoint_dir(job["workspace"])
+        directory.mkdir(parents=True, exist_ok=True)
+        filename = f"{timestamp.replace(':', '').replace('-', '')}-job-{args.job_id}-{slugify(title)}.md"
+        path = directory / filename
+        path.write_text(checkpoint_markdown(conn, job, tasks, audit_data, title, timestamp), encoding="utf-8")
+        with conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO checkpoints(job_id, title, path, status, next_role, next_command, resume_hint, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    args.job_id,
+                    title,
+                    str(path),
+                    "resolved" if audit_data["complete"] else "in-progress",
+                    audit_data.get("next_role", ""),
+                    audit_data.get("next_command", ""),
+                    audit_data.get("resume_hint", ""),
+                    timestamp,
+                ),
+            )
+            checkpoint_id = int(cursor.lastrowid)
+    payload = {
+        "id": checkpoint_id,
+        "job_id": args.job_id,
+        "title": title,
+        "path": str(path),
+        "status": "resolved" if audit_data["complete"] else "in-progress",
+        "next_role": audit_data.get("next_role", ""),
+        "next_command": audit_data.get("next_command", ""),
+        "resume_hint": audit_data.get("resume_hint", ""),
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(f"CHECKPOINT {checkpoint_id} {path}")
+        if payload["resume_hint"]:
+            print("Resume hint: " + payload["resume_hint"])
+    return 0
+
+
+def checkpoint_rows(conn: sqlite3.Connection, workspace: str | None = None, job_id: int | None = None) -> list[sqlite3.Row]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if workspace:
+        clauses.append("jobs.workspace = ?")
+        params.append(str(Path(workspace).expanduser().resolve(strict=False)))
+    if job_id is not None:
+        clauses.append("checkpoints.job_id = ?")
+        params.append(job_id)
+    where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+    return conn.execute(
+        f"""
+        SELECT checkpoints.*, jobs.workspace, jobs.goal
+        FROM checkpoints
+        JOIN jobs ON jobs.id = checkpoints.job_id
+        {where}
+        ORDER BY checkpoints.created_at DESC, checkpoints.id DESC
+        """,
+        params,
+    ).fetchall()
+
+
+def list_checkpoints(args: argparse.Namespace) -> int:
+    with closing(connect(args.db)) as conn:
+        rows = checkpoint_rows(conn, args.workspace, args.job_id)
+    payload = {"checkpoints": [row_to_dict(row) for row in rows]}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        if not rows:
+            print("No checkpoints.")
+        for row in rows:
+            print(f"{row['id']}. job {row['job_id']} {row['created_at']} {row['title']} [{row['status']}]")
+    return 0
+
+
+def load_checkpoint_row(conn: sqlite3.Connection, checkpoint_id: int | None = None) -> sqlite3.Row:
+    if checkpoint_id is not None:
+        row = conn.execute(
+            """
+            SELECT checkpoints.*, jobs.workspace, jobs.goal
+            FROM checkpoints
+            JOIN jobs ON jobs.id = checkpoints.job_id
+            WHERE checkpoints.id = ?
+            """,
+            (checkpoint_id,),
+        ).fetchone()
+    else:
+        rows = checkpoint_rows(conn)
+        row = rows[0] if rows else None
+    if row is None:
+        raise SystemExit("ERROR: checkpoint not found")
+    return row
+
+
+def restore_checkpoint(args: argparse.Namespace) -> int:
+    with closing(connect(args.db)) as conn:
+        row = load_checkpoint_row(conn, args.checkpoint_id)
+    path = Path(row["path"])
+    content = path.read_text(encoding="utf-8", errors="replace") if path.exists() else ""
+    payload = {**row_to_dict(row), "content": content}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(content or f"Checkpoint file missing: {path}")
+    return 0
+
+
+def checkpoint_report(args: argparse.Namespace) -> int:
+    with closing(connect(args.db)) as conn:
+        rows = list(reversed(checkpoint_rows(conn, job_id=args.job_id)))
+    parts = [f"# Checkpoint Report: job {args.job_id}", ""]
+    for row in rows:
+        path = Path(row["path"])
+        content = path.read_text(encoding="utf-8", errors="replace") if path.exists() else f"(missing checkpoint file: {path})"
+        parts.extend([f"## {row['created_at']} - {row['title']}", "", content, ""])
+    report = "\n".join(parts)
+    payload = {"job_id": args.job_id, "checkpoint_count": len(rows), "content": report}
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+    else:
+        print(report)
+    return 0
 
 
 def init_db(args: argparse.Namespace) -> None:
@@ -2009,6 +2309,28 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-w", "--workspace", default=None)
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=doctor)
+
+    p = sub.add_parser("checkpoint-save", help="save a resumable checkpoint for a job")
+    p.add_argument("--job-id", type=int, required=True)
+    p.add_argument("--title", required=True)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=save_checkpoint)
+
+    p = sub.add_parser("checkpoint-list", help="list resumable checkpoints")
+    p.add_argument("-w", "--workspace", default=None)
+    p.add_argument("--job-id", type=int)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=list_checkpoints)
+
+    p = sub.add_parser("checkpoint-restore", help="restore a checkpoint by id or latest")
+    p.add_argument("checkpoint_id", nargs="?", type=int)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=restore_checkpoint)
+
+    p = sub.add_parser("checkpoint-report", help="merge checkpoints for a job into one report")
+    p.add_argument("--job-id", type=int, required=True)
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(func=checkpoint_report)
 
     p = sub.add_parser("submit-atomic", help="debug/recovery: create an empty job without executing a capability")
     p.add_argument("goal")

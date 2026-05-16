@@ -46,6 +46,21 @@ python -B .claude\scripts\test_all.py --real-codex
 python -B .claude\scripts\test_all.py --real-claude-cli
 ```
 
+## Resume Failed Work
+
+If a job fails, blocks, or Stop reports unfinished focus, checkpoint the current
+state before retrying:
+
+```powershell
+python .claude\scripts\taskctl.py audit 1 --json
+python .claude\scripts\taskctl.py checkpoint-save --job-id 1 --title "Resume blocked job"
+python .claude\scripts\taskctl.py checkpoint-restore 1 --json
+```
+
+Use `checkpoint-list` when the checkpoint id is unknown, and
+`checkpoint-report --job-id 1` before handoff or final closure when several
+retry attempts were made.
+
 ## Upgrade A Target
 
 Re-run the installer against the same target:
@@ -96,5 +111,6 @@ python .claude\scripts\prompt_template_mcp.py ensure --workspace . --refresh-ver
 | `Stop hook error: Hook JSON output validation failed` | Stop hook returned fields that Claude only accepts for other hook types | Reinstall with `v0.1.2` or newer, or update `.claude/scripts/hook_stop_focus.py`. |
 | Hook tries to open `.claude/scripts/...` in the current project and fails | Hook command was generated with a relative script path | Reinstall with `v0.1.1` or newer so hooks use absolute installed script paths. |
 | Claude final answer is blocked by `FOCUS_GUARD_BLOCK` | Active goal is not marked complete or exhausted | Run `focus_guard.py complete` with evidence, or `exhausted` after all viable attempts. |
+| Claude keeps retrying the wrong taskctl command | Previous failure state was not restored | Run `taskctl checkpoint-list`, then `taskctl checkpoint-restore <id> --json` and follow the recorded `resume_hint`. |
 | Image generation feels slow on the first run | `image-2-prompt` MCP is being installed and smoke-tested | Let the first install finish; later checks use cached readiness. |
 | MCP warns that latest differs from installed | Local `image-2-prompt` commit is behind latest known remote | Review the warning and run the explicit upgrade command when desired. |

@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.13`.
+Current release: `v0.1.14`.
 
 ## What It Does
 
@@ -25,6 +25,7 @@ and fast local checks before production work is allowed to finish.
 | Permission mode | Claude Code permission prompts default to `bypassPermissions`; project hooks remain the enforcement layer. |
 | Focus guard | `Stop` blocks final answers until the active goal is marked complete or exhausted with evidence. |
 | Command catalog | `taskctl command` and `taskctl doctor` print exact local commands so Claude does not need to guess syntax. |
+| Failure resume | `taskctl checkpoint-*` saves, restores, lists, and reports resumable job state after failed or blocked work. |
 | Asset generation | `assetgen` uses Codex with `gpt-5.4-mini`, searches prompt templates through `image-2-prompt`, and writes manifests. |
 | Install portability | Installers rewrite hook commands to the detected Python executable and installed script paths. |
 | Version discipline | Repository releases use SemVer; the prompt-template MCP is tracked by exact git commit SHA. |
@@ -127,12 +128,28 @@ Use the catalog instead of guessing control-plane syntax:
 
 ```sh
 python .claude/scripts/taskctl.py command capability --workspace /path/to/project
+python .claude/scripts/taskctl.py command checkpoint-restore --workspace /path/to/project
 python .claude/scripts/taskctl.py doctor --workspace /path/to/project
 ```
 
 When `PreToolUse` blocks a direct write, the hook response includes
 `next_command` / `command_contract` fields with a directly executable catalog
 lookup command, plus `replacement_command` with the taskctl capability template.
+
+## Failure Resume
+
+When a job fails, blocks, or reaches Stop without enough evidence, save the
+current state before retrying:
+
+```sh
+python .claude/scripts/taskctl.py checkpoint-save --job-id 1 --title "Resume blocked implementation"
+python .claude/scripts/taskctl.py checkpoint-restore 1 --json
+python .claude/scripts/taskctl.py checkpoint-report --job-id 1 --json
+```
+
+Checkpoints live under `.claude/task-plans/checkpoints/` and summarize the user
+goal, job status, completed and missing artifacts, known blocker, next role,
+and next command.
 
 ## Asset Generation
 

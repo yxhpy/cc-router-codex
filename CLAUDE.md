@@ -167,4 +167,7 @@ The Stop hook blocks final answers until one of these states is recorded.
 ```
 
 - Recover stuck workers only through `retry-task` or `cancel-job`; do not edit
-  SQLite directly.
+  SQLite directly. For failed, blocked, or handed-off jobs, save and restore
+  state with `checkpoint-save`, `checkpoint-list`, `checkpoint-restore`, and
+  `checkpoint-report` so the next attempt starts from the recorded blocker and
+  resume hint.

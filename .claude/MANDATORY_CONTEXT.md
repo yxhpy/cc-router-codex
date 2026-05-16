@@ -122,7 +122,11 @@ skill invocation.
 18. Before reporting completion, run `taskctl.py audit <job_id>` and report
     missing artifacts or failed gates instead of claiming closure.
 19. If a worker is failed or stale, use `taskctl.py retry-task <task_id>` or
-    `taskctl.py cancel-job <job_id>`; never patch SQLite manually.
+    `taskctl.py cancel-job <job_id>`; never patch SQLite manually. When a job
+    is failed, blocked, or being handed off, use `taskctl.py checkpoint-save`
+    and `checkpoint-restore` so the next attempt starts from the recorded
+    blocker, missing artifacts, next role, and resume hint instead of
+    rediscovering command syntax.
 20. Claude direct writes are allowed only for runtime state such as
     `.claude/artifacts/**`, `.claude/task-plans/**`, and
     `.claude/scheduled_tasks.json`. Control-plane source/config writes require
