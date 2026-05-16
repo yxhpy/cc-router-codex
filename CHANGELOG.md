@@ -6,6 +6,11 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.23 - 2026-05-16
+
+- Fixed `test_hooks.py` so hook settings validation works in installed targets
+  where installer rewrites hook commands to absolute local script paths.
+
 ## 0.1.22 - 2026-05-16
 
 - Fixed Bash PreToolUse redirection detection so quoted prompt text containing

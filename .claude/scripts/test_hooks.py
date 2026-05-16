@@ -88,7 +88,7 @@ class HookTests(unittest.TestCase):
         if FOCUS_STATE.exists():
             FOCUS_STATE.unlink()
 
-    def test_settings_hook_commands_are_repo_relative(self) -> None:
+    def test_settings_hook_commands_resolve_inside_control_plane(self) -> None:
         settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
         self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
         commands = [
@@ -100,8 +100,14 @@ class HookTests(unittest.TestCase):
 
         for command in commands:
             _, _, script = command.partition(" ")
-            self.assertFalse(Path(script).is_absolute(), command)
-            self.assertTrue(script.startswith(".claude/scripts/"), command)
+            path = Path(script)
+            if path.is_absolute():
+                self.assertTrue(
+                    path.resolve(strict=False).is_relative_to((ROOT / ".claude" / "scripts").resolve(strict=False)),
+                    command,
+                )
+            else:
+                self.assertTrue(script.startswith(".claude/scripts/"), command)
 
     def test_blocks_direct_write_outside_claude(self) -> None:
         code, output = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": "sample-page.html"}})
