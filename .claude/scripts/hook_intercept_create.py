@@ -213,19 +213,53 @@ def _is_python_executable_token(value: str) -> bool:
     return re.fullmatch(PYTHON_EXE_NAME, name, re.IGNORECASE) is not None
 
 
-def _extract_python_inline_code(cmd: str) -> str | None:
+SHELL_COMMAND_SEPARATORS = {";", "&&", "||", "|", "&"}
+ENV_ASSIGNMENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.+$")
+
+
+def _ends_command_segment(token: str) -> bool:
+    value = str(token or "").strip()
+    return value in SHELL_COMMAND_SEPARATORS or value.endswith((";", "&&", "||", "|", "&"))
+
+
+def _is_python_command_position(tokens: list[str], index: int) -> bool:
+    probe = index - 1
+    while probe >= 0 and ENV_ASSIGNMENT.fullmatch(tokens[probe].strip()):
+        probe -= 1
+    if probe < 0:
+        return True
+    return _ends_command_segment(tokens[probe])
+
+
+def _extract_python_inline_codes(cmd: str) -> list[str]:
     try:
         tokens = shlex.split(cmd, posix=True)
     except ValueError:
-        return None
-    if len(tokens) < 3 or not _is_python_executable_token(tokens[0]):
-        return None
-    for index, token in enumerate(tokens[1:], 1):
-        if token == "-c" and index + 1 < len(tokens):
-            return tokens[index + 1]
-        if token.startswith("-c") and len(token) > 2:
-            return token[2:]
-    return None
+        return []
+    codes: list[str] = []
+    for index, token in enumerate(tokens):
+        if not _is_python_executable_token(token.rstrip(";")) or not _is_python_command_position(tokens, index):
+            continue
+        probe = index + 1
+        while probe < len(tokens):
+            option = tokens[probe].strip()
+            if _ends_command_segment(option) or option in {"--", "-m"}:
+                break
+            if option == "-c" and probe + 1 < len(tokens):
+                codes.append(tokens[probe + 1])
+                break
+            if option.startswith("-c") and len(option) > 2:
+                codes.append(option[2:])
+                break
+            if not option.startswith("-"):
+                break
+            probe += 1
+    return codes
+
+
+def _extract_python_inline_code(cmd: str) -> str | None:
+    codes = _extract_python_inline_codes(cmd)
+    return codes[0] if codes else None
 
 
 def _dotted_call_name(node: ast.AST) -> str:
@@ -304,23 +338,28 @@ class _InlinePythonReadOnlyVisitor(ast.NodeVisitor):
 
 
 def is_readonly_python_inline(cmd: str) -> bool:
-    code = _extract_python_inline_code(cmd)
-    if code is None or _contains_mutating_python_text(code):
+    codes = _extract_python_inline_codes(cmd)
+    if not codes:
         return False
-    try:
-        tree = ast.parse(code)
-    except SyntaxError:
-        # Let harmless typo/probe commands fail in the shell instead of being
-        # mistaken for file writes by the hook.
-        return True
-    visitor = _InlinePythonReadOnlyVisitor()
-    visitor.visit(tree)
-    return not visitor.unsafe
+    for code in codes:
+        if _contains_mutating_python_text(code):
+            return False
+        try:
+            tree = ast.parse(code)
+        except SyntaxError:
+            # Let harmless typo/probe commands fail in the shell instead of being
+            # mistaken for file writes by the hook.
+            continue
+        visitor = _InlinePythonReadOnlyVisitor()
+        visitor.visit(tree)
+        if visitor.unsafe:
+            return False
+    return True
 
 
 def inline_python_file_operation_reason(cmd: str) -> str | None:
-    code = _extract_python_inline_code(cmd)
-    if code is None:
+    codes = _extract_python_inline_codes(cmd)
+    if not codes:
         return None
     patterns = [
         r"\bopen\s*\(",
@@ -328,8 +367,9 @@ def inline_python_file_operation_reason(cmd: str) -> str | None:
         r"\b(?:os\.)?(?:listdir|scandir|walk)\s*\(",
         r"\bglob\.(?:glob|iglob)\s*\(",
     ]
-    if any(re.search(pattern, code, re.IGNORECASE | re.DOTALL) for pattern in patterns):
-        return "Inline Python workspace file operation blocked"
+    for code in codes:
+        if any(re.search(pattern, code, re.IGNORECASE | re.DOTALL) for pattern in patterns):
+            return "Inline Python workspace file operation blocked"
     return None
 
 

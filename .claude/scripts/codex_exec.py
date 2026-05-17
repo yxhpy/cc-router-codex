@@ -25,7 +25,8 @@ Env vars:
   CODEX_PROXY -> optional single proxy URL copied to HTTP(S)/ALL proxy vars
   CODEX_MODEL -> optional Codex model override
   CODEX_REASONING_EFFORT -> optional Codex CLI reasoning effort override
-  CODEX_FOREGROUND_SERVER_GUARD_SECONDS -> seconds before killing a foreground dev server (default: 45, 0 disables)
+  CODEX_FOREGROUND_SERVER_GUARD_SECONDS -> seconds before logging an advisory foreground dev-server warning (default: 45, 0 disables)
+  CODEX_FOREGROUND_SERVER_GUARD_MODE -> warn (default) or kill; kill terminates after the guard seconds
   --reasoning-effort -> per-run reasoning effort override
 """
 
@@ -189,6 +190,15 @@ def _foreground_server_guard_seconds() -> int:
     except ValueError:
         return 45
     return max(0, seconds)
+
+
+def _foreground_server_guard_mode() -> str:
+    value = os.environ.get("CODEX_FOREGROUND_SERVER_GUARD_MODE", "warn").strip().lower()
+    if value in {"kill", "terminate"}:
+        return "kill"
+    if value in {"off", "disabled", "none"}:
+        return "off"
+    return "warn"
 
 
 def _popen_process_group_kwargs() -> dict[str, object]:
@@ -388,6 +398,7 @@ def _run_codex_with_watchdog(
     log_file: Path,
     log_file_handle,
     guard_seconds: int,
+    guard_mode: str = "warn",
 ) -> tuple[int, str]:
     process = subprocess.Popen(
         cmd,
@@ -398,6 +409,7 @@ def _run_codex_with_watchdog(
     )
     guard_started_at: float | None = None
     guard_reason = ""
+    guard_reported = False
     try:
         if process.stdin is not None:
             try:
@@ -414,21 +426,31 @@ def _run_codex_with_watchdog(
             if return_code is not None:
                 return int(return_code), ""
 
-            if guard_seconds > 0:
+            if guard_seconds > 0 and guard_mode != "off":
                 reason = _foreground_server_reason(_tail_text(log_file))
                 if reason:
                     if guard_started_at is None:
                         guard_started_at = time.time()
                         guard_reason = reason
                     elif time.time() - guard_started_at >= guard_seconds:
-                        _terminate_process_tree(process)
-                        return (
-                            124,
-                            "FOREGROUND_SERVER_BLOCKED: detected a long-running server "
-                            f"pattern ({guard_reason!r}) and Codex was still running after "
-                            f"{guard_seconds} seconds. Start dev servers in the background, "
-                            "run bounded checks, then stop them before finishing.",
-                        )
+                        if guard_mode == "kill":
+                            _terminate_process_tree(process)
+                            return (
+                                124,
+                                "FOREGROUND_SERVER_BLOCKED: detected a long-running server "
+                                f"pattern ({guard_reason!r}) and Codex was still running after "
+                                f"{guard_seconds} seconds. Start dev servers in the background, "
+                                "run bounded checks, then stop them before finishing.",
+                            )
+                        if not guard_reported:
+                            log_file_handle.write(
+                                "\nFOREGROUND_SERVER_WARNING: detected a possible dev-server "
+                                f"log pattern ({guard_reason!r}) while Codex is still running. "
+                                "This is advisory only; taskctl will rely on the normal worker "
+                                "timeout unless CODEX_FOREGROUND_SERVER_GUARD_MODE=kill is set.\n"
+                            )
+                            log_file_handle.flush()
+                            guard_reported = True
                 else:
                     guard_started_at = None
                     guard_reason = ""
@@ -469,7 +491,8 @@ def main():
         print("  CODEX_PROXY → optional proxy URL for Codex child process")
         print("  CODEX_MODEL → optional model override")
         print("  CODEX_REASONING_EFFORT → optional reasoning effort override")
-        print("  CODEX_FOREGROUND_SERVER_GUARD_SECONDS → foreground dev-server watchdog seconds")
+        print("  CODEX_FOREGROUND_SERVER_GUARD_SECONDS → foreground dev-server warning seconds")
+        print("  CODEX_FOREGROUND_SERVER_GUARD_MODE → warn by default; set kill to terminate")
         print("  --reasoning-effort → per-run reasoning effort override")
         sys.exit(0 if args.help else 1)
 
@@ -555,6 +578,7 @@ def main():
     verbose = os.environ.get("CODEX_VERBOSE") == "1"
     guard_message = ""
     guard_seconds = _foreground_server_guard_seconds()
+    guard_mode = _foreground_server_guard_mode()
 
     try:
         with open(log_file, "a", encoding="utf-8", errors="replace") as log_f:
@@ -568,6 +592,7 @@ def main():
                 log_file=log_file,
                 log_file_handle=log_f,
                 guard_seconds=guard_seconds,
+                guard_mode=guard_mode,
             )
             if guard_message:
                 log_f.write("\n" + guard_message + "\n")

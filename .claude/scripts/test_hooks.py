@@ -607,6 +607,25 @@ class HookTests(unittest.TestCase):
         self.assertTrue(output["continue"])
         self.assertIn("Bash file operation blocked", output["reason"])
 
+    def test_grok_pretooluse_claude_style_run_terminal_command_alias_is_nonfatal(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "workspaceRoot": str(ROOT),
+                "tool_name": "run_terminal_command",
+                "tool_input": {
+                    "command": "python -c \"import json; print(json.load(open('data/sample.json')))\""
+                },
+            },
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output["decision"], "deny")
+        self.assertTrue(output["continue"])
+        self.assertIn("Inline Python workspace file operation blocked", output["reason"])
+        self.assertNotIn("hookSpecificOutput", output)
+        self.assertNotIn("stopReason", output)
+
     def test_grok_pretooluse_inline_python_open_blocks_without_stopping_session(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "demo"
@@ -644,6 +663,34 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
         self.assertIn("Inline Python workspace file operation blocked", output["reason"])
+
+    def test_composite_inline_python_path_read_text_blocks_before_bash_guard(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "cd /c/Users/Administrator/Desktop/demo; python -c \"from pathlib import Path; print(Path('data/search-index.json').read_text())\""
+                },
+            },
+            bash_guard_mock(allow=True, reason="would otherwise allow composite readonly Python"),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("Inline Python workspace file operation blocked", output["reason"])
+
+    def test_composite_readonly_python_probe_is_allowed(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "tool_name": "Bash",
+                "tool_input": {"command": "cd .; python -c \"import sys; print(sys.executable)\" 2>/dev/null"},
+            },
+        )
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
 
     def test_grok_pretooluse_write_payload_blocks_with_deny_decision(self) -> None:
         code, output = run_hook(
@@ -696,6 +743,23 @@ class HookTests(unittest.TestCase):
                 "toolInput": {"file_path": "sample-page.html"},
             },
             {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output["decision"], "deny")
+        self.assertTrue(output["continue"])
+        self.assertIn("sample-page.html", output["reason"])
+        self.assertNotIn("hookSpecificOutput", output)
+        self.assertNotIn("stopReason", output)
+
+    def test_grok_pretooluse_claude_style_search_replace_alias_is_nonfatal(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "workspaceRoot": str(ROOT),
+                "tool_name": "search_replace",
+                "tool_input": {"file_path": "sample-page.html"},
+            },
         )
 
         self.assertEqual(code, 0)

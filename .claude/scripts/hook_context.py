@@ -33,6 +33,14 @@ GROK_TOOL_ALIASES = {
     "spawn_subagent": "Task",
 }
 
+GROK_PAYLOAD_TOOL_NAMES = {
+    "run_terminal_cmd",
+    "run_terminal_command",
+    "search_replace",
+    "write",
+    "write_file",
+}
+
 
 def _normalize_workspace(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
@@ -55,10 +63,13 @@ def raw_hook_event(payload: dict[str, Any]) -> str:
 
 def is_grok_hook(payload: dict[str, Any]) -> bool:
     event = raw_hook_event(payload)
+    tool_name = payload.get("tool_name")
+    tool_name_key = tool_name.strip() if isinstance(tool_name, str) else ""
     return (
         bool(os.environ.get("GROK_HOOK_EVENT"))
         or "toolName" in payload
         or "toolInput" in payload
+        or tool_name_key in GROK_PAYLOAD_TOOL_NAMES
         or ("_" in event and event.lower() == event)
     )
 

@@ -130,7 +130,34 @@ class CodexExecEnvTests(unittest.TestCase):
         with mock.patch.dict(codex_exec.os.environ, {"CODEX_FOREGROUND_SERVER_GUARD_SECONDS": "0"}):
             self.assertEqual(codex_exec._foreground_server_guard_seconds(), 0)
 
-    def test_foreground_server_watchdog_terminates_ready_process(self) -> None:
+    def test_foreground_server_guard_mode_defaults_to_warn(self) -> None:
+        with mock.patch.dict(codex_exec.os.environ, {}, clear=True):
+            self.assertEqual(codex_exec._foreground_server_guard_mode(), "warn")
+
+    def test_foreground_server_watchdog_warns_without_terminating_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "codex.log"
+            with log_path.open("w", encoding="utf-8", errors="replace") as log_f:
+                code, message = codex_exec._run_codex_with_watchdog(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time; print('Local:   http://localhost:5173/', flush=True); time.sleep(2)",
+                    ],
+                    prompt="",
+                    env=os.environ.copy(),
+                    log_file=log_path,
+                    log_file_handle=log_f,
+                    guard_seconds=1,
+                    guard_mode="warn",
+                )
+            log_text = log_path.read_text(encoding="utf-8", errors="replace")
+
+        self.assertEqual(code, 0)
+        self.assertEqual(message, "")
+        self.assertIn("FOREGROUND_SERVER_WARNING", log_text)
+
+    def test_foreground_server_watchdog_terminates_ready_process_when_kill_mode_is_explicit(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             log_path = Path(tmp) / "codex.log"
             with log_path.open("w", encoding="utf-8", errors="replace") as log_f:
@@ -145,6 +172,7 @@ class CodexExecEnvTests(unittest.TestCase):
                     log_file=log_path,
                     log_file_handle=log_f,
                     guard_seconds=1,
+                    guard_mode="kill",
                 )
 
         self.assertEqual(code, 124)

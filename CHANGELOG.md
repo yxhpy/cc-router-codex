@@ -6,6 +6,23 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.29 - 2026-05-17
+
+- Changed the Codex foreground server guard to advisory mode by default: it now
+  logs `FOREGROUND_SERVER_WARNING` instead of killing the whole capability when
+  worker logs contain dev-server readiness text. Hard termination is available
+  only with `CODEX_FOREGROUND_SERVER_GUARD_MODE=kill`.
+- Detected Grok PreToolUse payloads that arrive through Claude-style
+  `tool_name` keys but use Grok internal tool aliases such as
+  `run_terminal_command` or `search_replace`, so denied calls remain nonfatal
+  Grok `decision=deny` responses.
+- Scanned composite shell command segments for inline Python file IO, blocking
+  commands such as `cd ...; python -c "Path('data/search-index.json').read_text()"`
+  before the Bash guard can allow them.
+- Added regressions for nonfatal Grok alias denies, composite inline Python
+  workspace file reads, readonly inline Python probes, and the advisory
+  foreground-server guard behavior.
+
 ## 0.1.28 - 2026-05-17
 
 - Changed Grok PreToolUse blocks to return a non-error hook exit while still
