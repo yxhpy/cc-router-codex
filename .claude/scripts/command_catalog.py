@@ -62,8 +62,9 @@ def contracts(workspace: str | None = None) -> dict[str, CommandContract]:
             ),
             writes="Writes only through taskctl/Codex worker under the target workspace and task database.",
             use_when=(
-                "Use instead of direct Write/Edit/Bash product-file edits. For long prompts, write the prompt "
-                "with the file tool under .claude/task-plans/ and replace --prompt with "
+                "Use instead of direct Write/Edit/Bash product-file edits, workspace file reads, or controller-side "
+                "Python/shell data processing. For long prompts, write the prompt with the file tool under "
+                ".claude/task-plans/ and replace --prompt with "
                 "--prompt-file .claude/task-plans/<name>.txt; do not use shell heredocs."
             ),
             failure_hint="Run `taskctl doctor --json` and inspect taskctl status/audit before retrying.",
@@ -76,6 +77,7 @@ def contracts(workspace: str | None = None) -> dict[str, CommandContract]:
             examples=(
                 f"{taskctl} capability --role fullstack --title \"Implement bounded fix\" --prompt \"Implement one bounded fix and record implementation_summary.\" --artifact implementation_summary:.claude/artifacts/implementation_summary.md --workspace {workspace_value} --goal \"Implement bounded fix\"",
                 f"{taskctl} capability --role uiux --title \"Write design contract\" --prompt-file .claude/task-plans/uiux-prompt.txt --artifact style_contract:.claude/artifacts/style_contract.md --workspace {workspace_value} --goal \"Write design contract\"",
+                f"{taskctl} capability --role debugger --title \"Inspect project data\" --prompt \"Inspect the requested workspace data files through the worker and record findings only.\" --artifact debug_report:.claude/artifacts/debug_report.md --workspace {workspace_value} --goal \"Inspect project data\"",
             ),
         ),
         "status": CommandContract(

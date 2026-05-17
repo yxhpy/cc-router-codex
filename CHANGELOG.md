@@ -6,6 +6,18 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.28 - 2026-05-17
+
+- Changed Grok PreToolUse blocks to return a non-error hook exit while still
+  emitting `decision=deny`, so denied direct tool calls do not stop the whole
+  Grok session.
+- Kept inline Python workspace file IO blocked deterministically, including
+  `open(...)`, `Path.read_text()`, `Path.read_bytes()`, globbing, and directory
+  walks, so controller-side data inspection must route through taskctl.
+- Updated block guidance and command contracts to say workspace reads, JSON/data
+  processing, and product writes all require a bounded `taskctl.py capability`
+  worker command.
+
 ## 0.1.27 - 2026-05-17
 
 - Added assetgen task DB progress events for request start, Codex generation

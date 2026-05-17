@@ -90,7 +90,7 @@ class HookTests(unittest.TestCase):
             FOCUS_STATE.unlink()
 
     def test_settings_hook_commands_resolve_inside_control_plane(self) -> None:
-        settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
+        settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8-sig"))
         self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
         self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "")
         commands = [
@@ -583,9 +583,9 @@ class HookTests(unittest.TestCase):
             {"GROK_HOOK_EVENT": "pre_tool_use"},
         )
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(output["decision"], "deny")
-        self.assertFalse(output["continue"])
+        self.assertTrue(output["continue"])
         self.assertIn("Bash file operation blocked", output["reason"])
         self.assertNotIn("hookSpecificOutput", output)
         self.assertNotIn("stopReason", output)
@@ -602,10 +602,48 @@ class HookTests(unittest.TestCase):
             {"GROK_HOOK_EVENT": "pre_tool_use"},
         )
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(output["decision"], "deny")
-        self.assertFalse(output["continue"])
+        self.assertTrue(output["continue"])
         self.assertIn("Bash file operation blocked", output["reason"])
+
+    def test_grok_pretooluse_inline_python_open_blocks_without_stopping_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "demo"
+            command = 'python -c "import json; print(json.load(open(\\\'data/sample.json\\\')))"'
+            code, output = run_hook(
+                HOOK,
+                {
+                    "hookEventName": "pre_tool_use",
+                    "workspaceRoot": str(workspace),
+                    "toolName": "run_terminal_command",
+                    "toolInput": {"command": command},
+                },
+                {"GROK_HOOK_EVENT": "pre_tool_use"},
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output["decision"], "deny")
+        self.assertTrue(output["continue"])
+        self.assertIn("Inline Python workspace file operation blocked", output["reason"])
+        self.assertIn("Do not read, process, or write target workspace files directly", output["reason"])
+        self.assertIn("--role <role>", output["replacement_command"])
+
+    def test_inline_python_path_read_text_blocks_before_bash_guard(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "tool_name": "Bash",
+                "tool_input": {
+                    "command": "python -c \"from pathlib import Path; print(Path('data/sample.json').read_text())\""
+                },
+            },
+            bash_guard_mock(allow=True, reason="would otherwise allow readonly Python"),
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+        self.assertIn("Inline Python workspace file operation blocked", output["reason"])
 
     def test_grok_pretooluse_write_payload_blocks_with_deny_decision(self) -> None:
         code, output = run_hook(
@@ -619,9 +657,9 @@ class HookTests(unittest.TestCase):
             {"GROK_HOOK_EVENT": "pre_tool_use"},
         )
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(output["decision"], "deny")
-        self.assertFalse(output["continue"])
+        self.assertTrue(output["continue"])
         self.assertIn("sample-page.html", output["reason"])
         self.assertNotIn("hookSpecificOutput", output)
         self.assertNotIn("stopReason", output)
@@ -642,7 +680,7 @@ class HookTests(unittest.TestCase):
             {"GROK_HOOK_EVENT": "pre_tool_use"},
         )
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(output["decision"], "deny")
         self.assertIn("index.html", output["reason"])
         self.assertIn("C:\\Users\\Administrator\\Desktop\\demo3", output["reason"])
@@ -660,9 +698,9 @@ class HookTests(unittest.TestCase):
             {"GROK_HOOK_EVENT": "pre_tool_use"},
         )
 
-        self.assertEqual(code, 2)
+        self.assertEqual(code, 0)
         self.assertEqual(output["decision"], "deny")
-        self.assertFalse(output["continue"])
+        self.assertTrue(output["continue"])
         self.assertIn("sample-page.html", output["reason"])
         self.assertNotIn("hookSpecificOutput", output)
         self.assertNotIn("stopReason", output)

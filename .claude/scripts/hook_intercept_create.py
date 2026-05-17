@@ -116,7 +116,7 @@ Classify only the provided JSON payload's command. Do not run commands or sugges
 def taskctl_guidance(workspace: str) -> str:
     command_hint = command_catalog.inspect_command("capability", workspace)
     capability_hint = command_catalog.next_command("capability", workspace)
-    return f"""Do not write production files directly from Claude.
+    return f"""Do not read, process, or write target workspace files directly from Claude.
 Use exactly one atomic control-plane command for the target project workspace.
 Required command: taskctl.py capability.
 
@@ -132,8 +132,11 @@ target project.
 Allowed direct Claude writes are limited to runtime state under .claude/artifacts
 and .claude/task-plans. Control-plane source/config writes need explicit
 maintenance mode. Product code must be written by a Codex worker through
-taskctl, normally using role fullstack; image-only assets should use assetgen,
-which runs the built-in Codex raster backend at .claude/scripts/assetgen_exec.py.
+taskctl, normally using role fullstack. Workspace data/source inspection that
+needs shell, Python, JSON parsing, or file IO must be done by a bounded Codex
+worker, commonly role debugger or reviewer, and recorded as a report artifact
+under .claude/artifacts. Image-only assets should use assetgen, which runs the
+built-in Codex raster backend at .claude/scripts/assetgen_exec.py.
 
 For long capability prompts, use the file tool to write a UTF-8 prompt file
 under the target workspace's .claude/task-plans/ directory, then run
@@ -156,7 +159,7 @@ def block(reason: str, workspace: str, next_command_name: str = "capability", *,
     payload = {
         "decision": "deny" if grok else "block",
         "reason": message,
-        "continue": False,
+        "continue": True if grok else False,
         "next_command": contract_command,
         "replacement_command": replacement_command,
         "command_contract": contract_command,
@@ -170,7 +173,7 @@ def block(reason: str, workspace: str, next_command_name: str = "capability", *,
             "permissionDecisionReason": message,
         }
     print(json.dumps(payload, ensure_ascii=False))
-    raise SystemExit(2)
+    raise SystemExit(0 if grok else 2)
 
 
 def read_hook_json() -> dict[str, object]:
@@ -313,6 +316,21 @@ def is_readonly_python_inline(cmd: str) -> bool:
     visitor = _InlinePythonReadOnlyVisitor()
     visitor.visit(tree)
     return not visitor.unsafe
+
+
+def inline_python_file_operation_reason(cmd: str) -> str | None:
+    code = _extract_python_inline_code(cmd)
+    if code is None:
+        return None
+    patterns = [
+        r"\bopen\s*\(",
+        r"\.(?:open|read_text|read_bytes|glob|rglob|iterdir)\s*\(",
+        r"\b(?:os\.)?(?:listdir|scandir|walk)\s*\(",
+        r"\bglob\.(?:glob|iglob)\s*\(",
+    ]
+    if any(re.search(pattern, code, re.IGNORECASE | re.DOTALL) for pattern in patterns):
+        return "Inline Python workspace file operation blocked"
+    return None
 
 
 def is_safe_bash_command(cmd: str) -> bool:
@@ -521,6 +539,10 @@ def bash_block_reason(bash_cmd: str, workspace: str) -> str | None:
 
     if re.search(r"^(codex|codex\.cmd)\s+exec\b", cmd, re.IGNORECASE):
         return f"Bash file operation blocked: {cmd[:200]}"
+
+    inline_file_operation = inline_python_file_operation_reason(cmd)
+    if inline_file_operation:
+        return f"{inline_file_operation}: {cmd[:200]}"
 
     safe_command = is_safe_bash_command(cmd)
 

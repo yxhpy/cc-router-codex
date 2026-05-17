@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.27`.
+Current release: `v0.1.28`.
 
 ## What It Does
 
@@ -153,7 +153,7 @@ python .claude/scripts/taskctl.py command checkpoint-restore --workspace /path/t
 python .claude/scripts/taskctl.py doctor --workspace /path/to/project
 ```
 
-When `PreToolUse` blocks a direct write, the hook response includes
+When `PreToolUse` blocks direct workspace reads, data processing, or writes, the hook response includes
 `next_command` / `command_contract` fields with a directly executable catalog
 lookup command, plus `replacement_command` with the taskctl capability template.
 Each returned contract also includes `state_input`, `state_output`, and
