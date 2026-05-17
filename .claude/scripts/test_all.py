@@ -31,6 +31,7 @@ def main() -> int:
     py = sys.executable
     tests = [
         "test_hooks.py",
+        "test_project_init.py",
         "test_taskctl.py",
         "test_task_input_filter.py",
         "test_llm_router.py",

@@ -14,7 +14,7 @@ import json
 import os
 from pathlib import Path
 
-from project_paths import REPO_ROOT, repo_relative, resolve_in_repo
+from project_paths import REPO_ROOT, normalize_external_path, repo_relative, resolve_in_repo
 
 
 CONTROL_PLANE_WRITE_ENV = "CLAUDE_CONTROL_PLANE_WRITE"
@@ -60,9 +60,24 @@ class WriteDecision:
     relative_path: str
 
 
-def _normalized_relative(file_path: str) -> str:
+def _workspace_relative(file_path: str, workspace: str | None) -> str | None:
+    if not workspace:
+        return None
+    root = Path(normalize_external_path(workspace)).expanduser().resolve(strict=False)
+    path = Path(normalize_external_path(file_path)).expanduser()
+    if not path.is_absolute():
+        path = root / path
+    try:
+        return path.resolve(strict=False).relative_to(root).as_posix()
+    except ValueError:
+        return None
+
+
+def _normalized_relative(file_path: str, workspace: str | None = None) -> str:
     if not file_path:
         return ""
+    if workspace_rel := _workspace_relative(file_path, workspace):
+        return workspace_rel
     return repo_relative(resolve_in_repo(file_path)).replace("\\", "/")
 
 
@@ -124,8 +139,13 @@ def control_plane_write_enabled(env: dict[str, str] | None = None) -> bool:
     return bool(expires_at and expires_at > datetime.now(timezone.utc))
 
 
-def classify_direct_write(file_path: str, env: dict[str, str] | None = None) -> WriteDecision:
-    rel = _normalized_relative(file_path)
+def classify_direct_write(
+    file_path: str,
+    env: dict[str, str] | None = None,
+    *,
+    workspace: str | None = None,
+) -> WriteDecision:
+    rel = _normalized_relative(file_path, workspace)
     if not rel:
         return WriteDecision(False, "unknown", "empty path", rel)
 

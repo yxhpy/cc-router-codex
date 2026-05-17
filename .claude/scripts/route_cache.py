@@ -12,6 +12,7 @@ from pathlib import Path
 import secrets
 from typing import Any, Iterable
 
+import project_init
 from project_paths import REPO_ROOT
 
 
@@ -27,7 +28,13 @@ class RouteTokenCheck:
 
 
 def _cache_path() -> Path:
-    return Path(os.environ.get("TASKCTL_ROUTE_CACHE_PATH", str(DEFAULT_CACHE_PATH))).expanduser().resolve()
+    configured = os.environ.get("TASKCTL_ROUTE_CACHE_PATH")
+    if configured:
+        return Path(configured).expanduser().resolve()
+    runtime = project_init.current_working_runtime()
+    if runtime is not None:
+        return runtime.route_cache_path
+    return DEFAULT_CACHE_PATH.expanduser().resolve()
 
 
 def _ttl_seconds() -> int:

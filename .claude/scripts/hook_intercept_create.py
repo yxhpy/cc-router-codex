@@ -3,13 +3,16 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
+import shlex
 import sys
 from typing import Any
 
 import command_catalog
+import project_init
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import hook_tool_input, hook_tool_name, is_grok_hook, target_workspace
 from llm_router import (
@@ -131,6 +134,11 @@ and .claude/task-plans. Control-plane source/config writes need explicit
 maintenance mode. Product code must be written by a Codex worker through
 taskctl, normally using role fullstack; image-only assets should use assetgen,
 which runs the built-in Codex raster backend at .claude/scripts/assetgen_exec.py.
+
+For long capability prompts, use the file tool to write a UTF-8 prompt file
+under the target workspace's .claude/task-plans/ directory, then run
+taskctl.py capability with --prompt-file .claude/task-plans/<name>.txt instead
+of --prompt. Do not use shell heredocs, redirection, tee, or /tmp prompt files.
 """
 
 
@@ -196,8 +204,123 @@ def is_safe_control_script(cmd: str) -> bool:
     return script.startswith(".claude/scripts/") or "/.claude/scripts/" in f"/{script}"
 
 
+def _is_python_executable_token(value: str) -> bool:
+    token = str(value or "").strip().strip('"\'').replace("\\", "/")
+    name = token.rsplit("/", 1)[-1]
+    return re.fullmatch(PYTHON_EXE_NAME, name, re.IGNORECASE) is not None
+
+
+def _extract_python_inline_code(cmd: str) -> str | None:
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        return None
+    if len(tokens) < 3 or not _is_python_executable_token(tokens[0]):
+        return None
+    for index, token in enumerate(tokens[1:], 1):
+        if token == "-c" and index + 1 < len(tokens):
+            return tokens[index + 1]
+        if token.startswith("-c") and len(token) > 2:
+            return token[2:]
+    return None
+
+
+def _dotted_call_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        prefix = _dotted_call_name(node.value)
+        return f"{prefix}.{node.attr}" if prefix else node.attr
+    if isinstance(node, ast.Call):
+        return _dotted_call_name(node.func)
+    return ""
+
+
+def _contains_mutating_python_text(code: str) -> bool:
+    lower = str(code or "").lower()
+    patterns = [
+        r"\b(open|exec|eval|compile|__import__)\s*\(",
+        r"\b(write|writelines|write_text|write_bytes|truncate|touch)\s*\(",
+        r"\b(unlink|remove|rmdir|removedirs|mkdir|makedirs|rename|replace|chmod|chown)\s*\(",
+        r"\b(os\.system|os\.popen|subprocess\.)",
+        r"\bshutil\.(copy|copyfile|copytree|move|rmtree)\s*\(",
+        r"\bsqlite3\b.*\b(update|insert|delete|replace|drop|alter|create)\b",
+        r"\bexecute(?:many|script)?\s*\(\s*[\"']\s*(update|insert|delete|replace|drop|alter|create)\b",
+    ]
+    return any(re.search(pattern, lower, re.DOTALL) for pattern in patterns)
+
+
+class _InlinePythonReadOnlyVisitor(ast.NodeVisitor):
+    mutating_attrs = {
+        "write",
+        "writelines",
+        "write_text",
+        "write_bytes",
+        "truncate",
+        "touch",
+        "unlink",
+        "remove",
+        "rmdir",
+        "removedirs",
+        "mkdir",
+        "makedirs",
+        "rename",
+        "replace",
+        "chmod",
+        "chown",
+        "copy",
+        "copyfile",
+        "copytree",
+        "move",
+        "rmtree",
+    }
+    unsafe_calls = {"open", "exec", "eval", "compile", "__import__", "input"}
+    sql_mutation = re.compile(r"^\s*(update|insert|delete|replace|drop|alter|create)\b", re.IGNORECASE)
+
+    def __init__(self) -> None:
+        self.unsafe = False
+
+    def visit_Call(self, node: ast.Call) -> Any:
+        name = _dotted_call_name(node.func)
+        attr = name.rsplit(".", 1)[-1] if name else ""
+        if name in self.unsafe_calls or attr in self.unsafe_calls or attr in self.mutating_attrs:
+            self.unsafe = True
+            return
+        if name in {"os.system", "os.popen"} or name.startswith("subprocess."):
+            self.unsafe = True
+            return
+        if attr in {"execute", "executemany", "executescript"}:
+            for arg in node.args[:1]:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and self.sql_mutation.search(arg.value):
+                    self.unsafe = True
+                    return
+        self.generic_visit(node)
+
+    def visit_Delete(self, node: ast.Delete) -> Any:
+        self.unsafe = True
+
+
+def is_readonly_python_inline(cmd: str) -> bool:
+    code = _extract_python_inline_code(cmd)
+    if code is None or _contains_mutating_python_text(code):
+        return False
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        # Let harmless typo/probe commands fail in the shell instead of being
+        # mistaken for file writes by the hook.
+        return True
+    visitor = _InlinePythonReadOnlyVisitor()
+    visitor.visit(tree)
+    return not visitor.unsafe
+
+
 def is_safe_bash_command(cmd: str) -> bool:
-    return is_safe_control_script(cmd) or any(re.search(pattern, cmd, re.IGNORECASE) for pattern in SAFE_BASH_CMDS)
+    return (
+        is_safe_control_script(cmd)
+        or is_readonly_python_inline(cmd)
+        or any(re.search(pattern, cmd, re.IGNORECASE) for pattern in SAFE_BASH_CMDS)
+    )
 
 
 def env_flag(name: str, default: str = "") -> bool:
@@ -321,6 +444,34 @@ def mask_shell_quoted_text(cmd: str) -> str:
     return "".join(chars)
 
 
+def _redirection_target_is_null_device(cmd: str, start: int) -> tuple[bool, int]:
+    index = start
+    while index < len(cmd) and cmd[index].isspace():
+        index += 1
+    if index >= len(cmd):
+        return False, index
+
+    if cmd[index] in {"'", '"'}:
+        quote = cmd[index]
+        index += 1
+        word_start = index
+        while index < len(cmd):
+            if quote == '"' and cmd[index] == "\\":
+                index += 2
+                continue
+            if cmd[index] == quote:
+                word = cmd[word_start:index]
+                return word.replace("\\", "/").lower() in {"/dev/null", "nul", "nul:"}, index + 1
+            index += 1
+        return False, index
+
+    word_start = index
+    while index < len(cmd) and not cmd[index].isspace() and cmd[index] not in {";", "|", "&"}:
+        index += 1
+    word = cmd[word_start:index]
+    return word.replace("\\", "/").lower() in {"/dev/null", "nul", "nul:"}, index
+
+
 def has_shell_file_redirection(cmd: str) -> bool:
     quote: str | None = None
     index = 0
@@ -342,6 +493,10 @@ def has_shell_file_redirection(cmd: str) -> bool:
             index += 2
             continue
         if char == "&" and index + 1 < len(cmd) and cmd[index + 1] == ">":
+            is_null, next_index = _redirection_target_is_null_device(cmd, index + 2)
+            if is_null:
+                index = next_index
+                continue
             return True
         if char == ">":
             target = index + 1
@@ -352,6 +507,10 @@ def has_shell_file_redirection(cmd: str) -> bool:
                 if fd_target < len(cmd) and (cmd[fd_target].isdigit() or cmd[fd_target] == "-"):
                     index = fd_target + 1
                     continue
+            is_null, next_index = _redirection_target_is_null_device(cmd, target)
+            if is_null:
+                index = next_index
+                continue
             return True
         index += 1
     return False
@@ -414,7 +573,7 @@ def has_file_creation(bash_cmd: str) -> bool:
 
 def handle_write(tool_name: str, tool_input: dict[str, object], workspace: str, *, grok: bool = False) -> None:
     file_path = str(tool_input.get("file_path") or tool_input.get("filePath") or tool_input.get("path") or "")
-    decision = classify_direct_write(file_path)
+    decision = classify_direct_write(file_path, workspace=workspace)
     if decision.allowed:
         allow(grok=grok)
         return
@@ -440,6 +599,7 @@ def main() -> None:
     tool_name = hook_tool_name(hook_input)
     tool_input = hook_tool_input(hook_input)
     workspace = target_workspace(hook_input)
+    project_init.apply_project_environment(workspace)
 
     if tool_name in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
         handle_write(tool_name, tool_input, workspace, grok=grok)

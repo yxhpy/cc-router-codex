@@ -9,7 +9,7 @@ Claude/Codex control plane for projects that need Claude Code to stay focused,
 route work through explicit roles, and delegate production execution to Codex
 with auditable artifacts.
 
-Current release: `v0.1.24`.
+Current release: `v0.1.25`.
 
 ## What It Does
 
@@ -52,6 +52,21 @@ curl -fsSL https://raw.githubusercontent.com/yxhpy/cc-router-codex/main/install.
 Both commands download this repository to a temporary directory, install into
 the current project, generate `.claude/.env` for the local machine, then delete
 the temporary copy.
+
+For a user-level global install, install once into the user home directory:
+
+```powershell
+python C:\path\to\cc-router-codex\install.py --target C:\Users\Administrator -y
+```
+
+Global installs keep stable hooks, scripts, policies, and skills in the user
+control plane. When a conversation targets another project, the hooks
+automatically create a lightweight project runtime if it is missing:
+`.claude/.env`, `.claude/task-plans/`, `.claude/artifacts/`, and
+`.claude/cc-router-project.json`. The project-local task database is created at
+`.claude/taskctl.sqlite3` when `taskctl.py` first opens it. The project does not
+receive copied control-plane scripts unless you explicitly install into that
+project.
 
 For non-interactive overwrite:
 

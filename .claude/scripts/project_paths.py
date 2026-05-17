@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import os
+import re
+import sys
 from pathlib import Path
 
 
@@ -28,8 +30,31 @@ def display_path(path: Path) -> str:
     return str(path.resolve()).replace("\\", "/")
 
 
+def normalize_external_path(path_value: str | Path) -> str:
+    """Normalize CLI paths before pathlib interprets them on this host."""
+
+    text = str(path_value)
+    if os.name != "nt":
+        return text
+
+    normalized = text.replace("\\", "/")
+    match = re.match(r"^/([A-Za-z])(?:/|$)(.*)$", normalized)
+    if match:
+        drive = match.group(1).upper()
+        rest = match.group(2)
+        return f"{drive}:/{rest}" if rest else f"{drive}:/"
+
+    match = re.match(r"^/cygdrive/([A-Za-z])(?:/|$)(.*)$", normalized, re.IGNORECASE)
+    if match:
+        drive = match.group(1).upper()
+        rest = match.group(2)
+        return f"{drive}:/{rest}" if rest else f"{drive}:/"
+
+    return text
+
+
 def resolve_in_repo(path_value: str | Path) -> Path:
-    path = Path(path_value).expanduser()
+    path = Path(normalize_external_path(path_value)).expanduser()
     if not path.is_absolute():
         path = REPO_ROOT / path
     return path.resolve()
@@ -64,13 +89,17 @@ def command_arg(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return '""'
-    if any(char.isspace() for char in text) or '"' in text:
+    if any(char.isspace() for char in text) or any(char in text for char in '"()&;<>|'):
         return '"' + text.replace('"', '\\"') + '"'
     return text
 
 
 def python_command() -> str:
     value = os.environ.get("TASKCTL_PYTHON") or parse_env_file().get("TASKCTL_PYTHON") or "python"
+    normalized = normalize_external_path(value)
+    if re.match(r"^[A-Za-z]:[\\/]", normalized) or normalized.startswith(("/", "\\")):
+        if not Path(normalized).exists():
+            value = sys.executable or "python"
     return command_arg(value)
 
 

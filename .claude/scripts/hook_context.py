@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from project_paths import normalize_external_path
+
 
 WORKSPACE_KEYS = (
     "cwd",
@@ -23,6 +25,7 @@ WORKSPACE_KEYS = (
 
 GROK_TOOL_ALIASES = {
     "run_terminal_cmd": "Bash",
+    "run_terminal_command": "Bash",
     "search_replace": "Edit",
     "write": "Write",
     "write_file": "Write",
@@ -34,10 +37,11 @@ GROK_TOOL_ALIASES = {
 def _normalize_workspace(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
+    text = normalize_external_path(value.strip())
     try:
-        return str(Path(value.strip()).expanduser().resolve(strict=False))
+        return str(Path(text).expanduser().resolve(strict=False))
     except OSError:
-        return value.strip()
+        return text
 
 
 def raw_hook_event(payload: dict[str, Any]) -> str:

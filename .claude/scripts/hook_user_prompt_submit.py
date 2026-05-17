@@ -13,6 +13,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import llm_router
 import focus_guard
+import project_init
 import route_cache
 from hook_context import target_workspace
 from project_paths import script_command
@@ -165,12 +166,14 @@ def main() -> int:
         print(json.dumps({"continue": True}))
         return 0
 
+    workspace = target_workspace(payload)
+    project_init.apply_project_environment(workspace)
+
     route = llm_router.route_prompt(prompt)
     if not route.production_work:
         print(json.dumps({"continue": True}))
         return 0
 
-    workspace = target_workspace(payload)
     route_token = ""
     if route.source in {"openai", "codex", "mock"} and not route.error:
         try:

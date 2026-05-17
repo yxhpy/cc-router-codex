@@ -23,6 +23,35 @@ For a user-level global install on Windows:
 python C:\path\to\cc-router-codex\install.py --target C:\Users\Administrator -y
 ```
 
+## Global Install With Project Auto-Init
+
+Use a global install for files that should stay stable across projects:
+hooks, scripts, policies, bundled skills, and command catalogs. Project-specific
+state is created in the target workspace only when a project conversation first
+needs it.
+
+On the first prompt or guarded tool event for a fresh project, the global hooks
+create:
+
+- `.claude/.env`
+- `.claude/.gitignore`
+- `.claude/cc-router-project.json`
+- `.claude/task-plans/`
+- `.claude/artifacts/`
+
+The project-local task database is created at `.claude/taskctl.sqlite3` when
+`taskctl.py` first opens it.
+
+The project runtime does not copy `.claude/scripts` or root `CLAUDE.md`; those
+remain in the global control plane. Use a full per-project install only when a
+project needs pinned control-plane files independent of the global install.
+
+For long `taskctl.py capability` prompts in Grok, write the prompt with the file
+tool under the target workspace's `.claude/task-plans/` directory and pass it as
+`--prompt-file .claude/task-plans/<name>.txt`. Do not use shell heredocs,
+redirection, `tee`, or `/tmp` prompt files; the PreToolUse hook blocks those
+direct shell writes.
+
 ## Verify An Install
 
 From the installed target:
@@ -182,6 +211,11 @@ python .claude\scripts\prompt_template_mcp.py ensure --workspace . --refresh-ver
 | Hook tries to open `.claude/scripts/...` in the current project and fails | Hook command was generated with a relative script path | Reinstall with `v0.1.1` or newer so hooks use absolute installed script paths. |
 | Claude final answer is blocked by `FOCUS_GUARD_BLOCK` | Active goal is not marked complete or exhausted | Run `focus_guard.py complete` with evidence, or `exhausted` after all viable attempts. |
 | Grok reports Stop hook exit code 2 | Installed hook is older than the Grok compatibility adapter, or it is being run outside a Grok hook payload | Update `.claude/scripts`; Grok Stop is non-blocking, so current hooks return a notice with exit code 0 and enforce blocking at PreToolUse with `decision=deny`. |
+| Grok runs `taskctl` and then writes files from the main thread | PreToolUse matcher did not catch Grok's internal tool name, such as lowercase `write` or `run_terminal_command` | Update `.claude/settings.json` so PreToolUse uses an empty matcher and update `.claude/scripts`; the guard then decides allow/deny internally. |
+| Grok says it wrote `/c/Users/...` but the Windows workspace has no file | MSYS-style path was interpreted by Windows Python as `C:\c\Users\...` | Update `.claude/scripts`; current path helpers normalize `/c/Users/...` and `/cygdrive/c/...` before hook classification. |
+| Grok hook commands point to a removed Python install | The installer captured a Python absolute path that no longer exists | Reinstall with current scripts. Windows installs use `.claude/scripts/run_python.cmd`, which tries `TASKCTL_PYTHON`, then `python`, then `py -3`, and prints a clear error if none is runnable. |
+| Grok fails on a long quoted `taskctl.py capability --prompt` command | The command exceeded practical shell quoting limits or contained nested quotes/newlines | Store the prompt under `.claude/task-plans/` with the file tool and use `--prompt-file .claude/task-plans/<name>.txt`. |
+| Grok says `.claude/task-plans/<name>.txt` is a product path | Installed hooks are older than the workspace-aware runtime write classifier | Update `.claude/scripts`; current hooks classify runtime writes against the active target workspace, not just the global control-plane path. |
 | Claude keeps retrying the wrong taskctl command | Previous failure state was not restored | Run `taskctl checkpoint-list`, then `taskctl checkpoint-restore <id> --json` and follow the recorded `resume_hint`. |
 | Prompt text with Swift `->` or Markdown `>` is blocked as shell redirection | Installed hook is older than `v0.1.22`, or the arrow was left unquoted in the shell command | Upgrade/reinstall; keep prompt text inside `--prompt "..."` so the shell does not treat `>` as syntax. |
 | Image generation feels slow on the first run | `image-2-prompt` MCP is being installed and smoke-tested | Let the first install finish; later checks use cached readiness. |

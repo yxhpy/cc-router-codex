@@ -39,6 +39,7 @@ DEFAULT_BASH_ALLOW_RULES = (
     "Bash(codex:*)",
 )
 DEFAULT_PERMISSION_MODE = "bypassPermissions"
+PRE_TOOL_USE_MATCHER = ""
 
 
 @dataclass(frozen=True)
@@ -246,12 +247,22 @@ def command_arg(value: str) -> str:
     text = str(value or "").strip()
     if not text:
         return '""'
-    if any(char.isspace() for char in text) or '"' in text:
+    if any(char.isspace() for char in text) or any(char in text for char in '"()&;<>|'):
         return '"' + text.replace('"', '\\"') + '"'
     return text
 
 
-def hook_command(python_cmd: str, script_path: str | Path) -> str:
+def hook_command(
+    python_cmd: str,
+    script_path: str | Path,
+    *,
+    scripts_dir: Path | None = None,
+    system: str | None = None,
+) -> str:
+    runner = scripts_dir / "run_python.cmd" if scripts_dir is not None else None
+    install_system = (system or platform.system()).lower()
+    if install_system == "windows" and runner is not None and runner.exists():
+        return f"{command_arg(normalize_command_path(runner))} {command_arg(normalize_command_path(script_path))}"
     return f"{command_arg(python_cmd)} {command_arg(normalize_command_path(script_path))}"
 
 
@@ -293,14 +304,28 @@ def rewrite_settings(settings_path: Path, detection: Detection) -> None:
     payload = json.loads(settings_path.read_text(encoding="utf-8", errors="replace"))
     ensure_permission_allows(payload, detection)
     scripts_dir = settings_path.parent / "scripts"
+    runner = scripts_dir / "run_python.cmd"
+    if detection.system == "windows" and runner.exists():
+        permissions = payload.setdefault("permissions", {})
+        if isinstance(permissions, dict):
+            allow = permissions.setdefault("allow", [])
+            if isinstance(allow, list):
+                runner_rule = bash_allow_rule(str(runner))
+                if runner_rule not in allow:
+                    allow.append(runner_rule)
     replacements = {
-        "hook_intercept_create.py": hook_command(detection.python, scripts_dir / "hook_intercept_create.py"),
-        "hook_user_prompt_submit.py": hook_command(detection.python, scripts_dir / "hook_user_prompt_submit.py"),
-        "hook_session_start.py": hook_command(detection.python, scripts_dir / "hook_session_start.py"),
-        "hook_stop_focus.py": hook_command(detection.python, scripts_dir / "hook_stop_focus.py"),
+        "hook_intercept_create.py": hook_command(detection.python, scripts_dir / "hook_intercept_create.py", scripts_dir=scripts_dir, system=detection.system),
+        "hook_user_prompt_submit.py": hook_command(detection.python, scripts_dir / "hook_user_prompt_submit.py", scripts_dir=scripts_dir, system=detection.system),
+        "hook_session_start.py": hook_command(detection.python, scripts_dir / "hook_session_start.py", scripts_dir=scripts_dir, system=detection.system),
+        "hook_stop_focus.py": hook_command(detection.python, scripts_dir / "hook_stop_focus.py", scripts_dir=scripts_dir, system=detection.system),
     }
     hooks = payload.get("hooks", {})
     if isinstance(hooks, dict):
+        pre_tool_entries = hooks.get("PreToolUse")
+        if isinstance(pre_tool_entries, list):
+            for entry in pre_tool_entries:
+                if isinstance(entry, dict):
+                    entry["matcher"] = PRE_TOOL_USE_MATCHER
         for entries in hooks.values():
             if not isinstance(entries, list):
                 continue

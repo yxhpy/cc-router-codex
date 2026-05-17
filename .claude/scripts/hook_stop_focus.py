@@ -12,6 +12,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import focus_guard
+import project_init
 from hook_context import is_grok_hook, target_workspace
 
 
@@ -36,6 +37,7 @@ def main() -> int:
         return 0
 
     workspace = target_workspace(payload)
+    project_init.apply_project_environment(workspace, set_db=False)
     decision = focus_guard.stop_decision(workspace)
     if decision.allow:
         print(json.dumps({"continue": True}))

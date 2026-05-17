@@ -13,6 +13,7 @@ import sys
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import hook_tool_input, hook_tool_name, is_grok_hook, target_workspace
+import project_init
 from project_paths import script_path
 
 
@@ -30,13 +31,15 @@ def main() -> None:
         print(json.dumps({"decision": "allow", "continue": True} if grok else {"continue": True}))
         return
 
+    workspace = target_workspace(payload)
+    project_init.apply_project_environment(workspace)
+
     file_path = str(tool_input.get("file_path") or tool_input.get("filePath") or tool_input.get("path") or "")
     decision = classify_direct_write(file_path)
     if decision.allowed:
         print(json.dumps({"decision": "allow", "continue": True} if grok else {"continue": True}))
         return
 
-    workspace = target_workspace(payload)
     reason = (
         f"{tool_name} blocked for {decision.category} path {decision.relative_path}: {decision.reason}\n\n"
         "Required command: taskctl.py capability.\n"

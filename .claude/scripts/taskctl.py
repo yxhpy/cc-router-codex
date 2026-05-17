@@ -26,7 +26,8 @@ from typing import Any, Iterable
 import artifact_quality
 import model_policy
 import command_catalog
-from project_paths import REPO_ROOT, script_command
+import project_init
+from project_paths import REPO_ROOT, normalize_external_path, script_command
 import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
 import worker_runner
@@ -115,7 +116,9 @@ def default_workspace() -> str:
 
 def prepare_workspace(value: str | None) -> str:
     try:
-        return str(worker_runner.ensure_workspace(value or default_workspace()))
+        workspace = str(worker_runner.ensure_workspace(value or default_workspace()))
+        project_init.ensure_project_initialized(workspace)
+        return workspace
     except OSError as exc:
         raise SystemExit(f"ERROR: invalid workspace: {exc}") from exc
 
@@ -281,8 +284,13 @@ def format_duration(seconds: int | None) -> str:
 
 
 def db_path(value: str | None = None) -> Path:
-    raw = value or os.environ.get("TASKCTL_DB") or str(DEFAULT_DB)
-    return Path(raw).expanduser().resolve()
+    raw = value or os.environ.get("TASKCTL_DB")
+    if raw:
+        return Path(raw).expanduser().resolve()
+    runtime = project_init.current_working_runtime()
+    if runtime is not None:
+        return runtime.db_path
+    return DEFAULT_DB.expanduser().resolve()
 
 
 def connect(path_value: str | None = None) -> sqlite3.Connection:
@@ -733,6 +741,45 @@ def create_capability_job(
     return job_id
 
 
+def resolve_prompt_file(workspace: str, prompt_file: str) -> Path:
+    raw = str(prompt_file or "").strip()
+    if not raw:
+        raise SystemExit("ERROR: --prompt-file cannot be empty")
+    candidate = Path(normalize_external_path(raw)).expanduser()
+    root = Path(workspace).resolve(strict=False)
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve(strict=False)
+    try:
+        relative = resolved.relative_to(root).as_posix()
+    except ValueError as exc:
+        raise SystemExit(f"ERROR: --prompt-file must stay inside workspace runtime state: {prompt_file}") from exc
+    if not (relative.startswith(".claude/task-plans/") or relative.startswith(".claude/artifacts/")):
+        raise SystemExit(
+            "ERROR: --prompt-file must be under .claude/task-plans/ or .claude/artifacts/ "
+            f"inside the workspace: {relative}"
+        )
+    if not resolved.is_file():
+        raise SystemExit(f"ERROR: --prompt-file does not exist: {resolved}")
+    if resolved.stat().st_size > 1024 * 1024:
+        raise SystemExit(f"ERROR: --prompt-file is too large: {resolved}")
+    return resolved
+
+
+def task_prompt_from_args(args: argparse.Namespace, workspace: str | None = None) -> str:
+    prompt = str(getattr(args, "prompt", "") or "")
+    prompt_file = str(getattr(args, "prompt_file", "") or "")
+    if prompt and prompt_file:
+        raise SystemExit("ERROR: use either --prompt or --prompt-file, not both")
+    if not prompt and not prompt_file:
+        raise SystemExit("ERROR: either --prompt or --prompt-file is required")
+    if prompt:
+        return prompt
+    prompt_workspace = workspace or getattr(args, "workspace", None) or default_workspace()
+    resolved = resolve_prompt_file(prepare_workspace(prompt_workspace), prompt_file)
+    return resolved.read_text(encoding="utf-8", errors="replace")
+
+
 def ensure_no_active_step(conn: sqlite3.Connection, job_id: int) -> None:
     active = conn.execute(
         "SELECT id, role, status FROM tasks WHERE job_id = ? AND status IN ('queued', 'running') ORDER BY id",
@@ -747,6 +794,11 @@ def ensure_no_active_step(conn: sqlite3.Connection, job_id: int) -> None:
 
 def run_capability(args: argparse.Namespace) -> int:
     required_artifacts = normalize_required_artifacts([*(args.required_artifact or []), *(args.artifact or [])])
+    prompt_workspace = args.workspace
+    if args.job_id is not None and prompt_workspace is None:
+        with closing(connect(args.db)) as prompt_conn:
+            prompt_workspace = load_job(prompt_conn, int(args.job_id))["workspace"]
+    prompt = task_prompt_from_args(args, prompt_workspace)
     token_check = route_cache.RouteTokenCheck(False, "route token not provided")
     token_workspace = args.workspace
     if args.route_token:
@@ -759,7 +811,7 @@ def run_capability(args: argparse.Namespace) -> int:
             args.route_token,
             role=args.role,
             title=args.title,
-            prompt=args.prompt,
+            prompt=prompt,
             artifacts=required_artifacts,
             workspace=token_workspace,
             goal=args.goal or args.title,
@@ -767,7 +819,7 @@ def run_capability(args: argparse.Namespace) -> int:
     require_valid_task_input(
         args.role,
         args.title,
-        args.prompt,
+        prompt,
         required_artifacts,
         skip_llm_guard=token_check.accepted,
     )
@@ -792,7 +844,7 @@ def run_capability(args: argparse.Namespace) -> int:
                 job_id,
                 args.role,
                 args.title,
-                args.prompt,
+                prompt,
                 [],
                 required_artifacts=required_artifacts,
             )
@@ -1471,9 +1523,10 @@ def cancel_job(args: argparse.Namespace) -> None:
 
 def enqueue(args: argparse.Namespace) -> None:
     required_artifacts = normalize_required_artifacts(args.required_artifact)
-    require_valid_task_input(args.role, args.title, args.prompt, required_artifacts)
     with closing(connect(args.db)) as conn:
-        load_job(conn, args.job_id)
+        job = load_job(conn, args.job_id)
+        prompt = task_prompt_from_args(args, job["workspace"])
+        require_valid_task_input(args.role, args.title, prompt, required_artifacts)
         workflow = job_workflow(conn, args.job_id)
         if workflow == ATOMIC_WORKFLOW:
             ensure_no_active_step(conn, args.job_id)
@@ -1484,7 +1537,7 @@ def enqueue(args: argparse.Namespace) -> None:
                 args.job_id,
                 args.role,
                 args.title,
-                args.prompt,
+                prompt,
                 deps,
                 required_artifacts=required_artifacts,
             )
@@ -1494,7 +1547,8 @@ def enqueue(args: argparse.Namespace) -> None:
 
 def filter_input(args: argparse.Namespace) -> int:
     required_artifacts = normalize_required_artifacts(args.required_artifact)
-    result = validate_task_input(args.role, args.title, args.prompt, required_artifacts)
+    prompt = task_prompt_from_args(args, getattr(args, "workspace", None))
+    result = validate_task_input(args.role, args.title, prompt, required_artifacts)
     payload = result.__dict__
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
@@ -2550,7 +2604,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--acceptance", action="append")
     p.add_argument("--role", required=True, choices=list(ROLES))
     p.add_argument("--title", required=True)
-    p.add_argument("--prompt", required=True)
+    p.add_argument("--prompt")
+    p.add_argument("--prompt-file", help="read worker prompt from .claude/task-plans/ or .claude/artifacts/ in the workspace")
     p.add_argument(
         "--artifact",
         action="append",
@@ -2604,14 +2659,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("job_id", type=int)
     p.add_argument("--role", required=True, choices=list(ROLES))
     p.add_argument("--title", required=True)
-    p.add_argument("--prompt", required=True)
+    p.add_argument("--prompt")
+    p.add_argument("--prompt-file", help="read worker prompt from .claude/task-plans/ or .claude/artifacts/ in the job workspace")
     p.add_argument("--required-artifact", action="append", help="artifact kind this atomic task must record before it can pass")
     p.set_defaults(func=enqueue)
 
     p = sub.add_parser("filter-input", help="debug/recovery: validate a worker task input without executing it")
     p.add_argument("--role", required=True, choices=list(ROLES))
     p.add_argument("--title", required=True)
-    p.add_argument("--prompt", required=True)
+    p.add_argument("--prompt")
+    p.add_argument("--prompt-file", help="read worker prompt from .claude/task-plans/ or .claude/artifacts/ in the workspace")
+    p.add_argument("-w", "--workspace", default=None)
     p.add_argument("--required-artifact", action="append")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=filter_input)
@@ -2706,6 +2764,12 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    workspace = getattr(args, "workspace", None)
+    if workspace:
+        try:
+            project_init.apply_project_environment(workspace, set_db=args.db is None)
+        except OSError as exc:
+            raise SystemExit(f"ERROR: invalid workspace: {exc}") from exc
     result = args.func(args)
     return int(result or 0)
 

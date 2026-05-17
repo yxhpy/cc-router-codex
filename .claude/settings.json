@@ -18,7 +18,7 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Task|Bash",
+        "matcher": "",
         "hooks": [
           {
             "type": "command",

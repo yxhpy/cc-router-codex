@@ -29,6 +29,7 @@ def make_source(root: Path) -> Path:
     (source / ".claude" / "scripts" / "hook_stop_focus.py").write_text("print('stop')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "hook_intercept_create.py").write_text("print('pre')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "hook_user_prompt_submit.py").write_text("print('prompt')\n", encoding="utf-8")
+    (source / ".claude" / "scripts" / "run_python.cmd").write_text("@echo off\npython %*\n", encoding="utf-8")
     (source / ".claude" / "task-plans" / "route-cache.json").write_text("{}", encoding="utf-8")
     (source / ".claude" / "artifacts" / "old.txt").write_text("runtime", encoding="utf-8")
     (source / ".claude" / ".prompt-searcher").mkdir()
@@ -63,6 +64,7 @@ def make_source(root: Path) -> Path:
                     ],
                     "PreToolUse": [
                         {
+                            "matcher": "Write|Edit|MultiEdit|NotebookEdit|Task|Bash",
                             "hooks": [
                                 {
                                     "type": "command",
@@ -136,18 +138,21 @@ class InstallTests(unittest.TestCase):
             session_hook = installer.normalize_command_path(
                 target.resolve() / ".claude" / "scripts" / "hook_session_start.py"
             )
-            self.assertEqual(command, f"C:/Python/python.exe {session_hook}")
+            runner = installer.normalize_command_path(target.resolve() / ".claude" / "scripts" / "run_python.cmd")
+            self.assertEqual(command, f"{runner} {session_hook}")
             stop_command = settings["hooks"]["Stop"][0]["hooks"][0]["command"]
             stop_hook = installer.normalize_command_path(
                 target.resolve() / ".claude" / "scripts" / "hook_stop_focus.py"
             )
-            self.assertEqual(stop_command, f"C:/Python/python.exe {stop_hook}")
+            self.assertEqual(stop_command, f"{runner} {stop_hook}")
+            self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "")
             self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
             allow = settings["permissions"]["allow"]
             self.assertIn("Bash(python *)", allow)
             self.assertIn("Bash(codex *)", allow)
             self.assertIn("Bash(C:/Python/python.exe *)", allow)
             self.assertIn("Bash(C:/npm/codex.cmd *)", allow)
+            self.assertIn(f"Bash({runner} *)", allow)
 
     def test_installer_quotes_permission_rules_for_paths_with_spaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -169,9 +174,37 @@ class InstallTests(unittest.TestCase):
             session_hook = installer.normalize_command_path(
                 target.resolve() / ".claude" / "scripts" / "hook_session_start.py"
             )
-            self.assertEqual(command, f'"C:/Program Files/Python/python.exe" {session_hook}')
+            runner = installer.normalize_command_path(target.resolve() / ".claude" / "scripts" / "run_python.cmd")
+            self.assertEqual(command, f"{runner} {session_hook}")
             self.assertIn('Bash("C:/Program Files/Python/python.exe" *)', allow)
             self.assertIn('Bash("C:/Program Files/node/codex.cmd" *)', allow)
+            self.assertIn(f"Bash({runner} *)", allow)
+
+    def test_installer_quotes_permission_rules_for_shell_special_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = make_source(root)
+            target = root / "target"
+            detection = installer.Detection(
+                "windows",
+                "D:/Tools/ComfyUI-aki(1)/python/python.exe",
+                "D:/Tools/node&codex/codex.cmd",
+            )
+
+            with mock.patch.object(installer, "detect_system", return_value=detection):
+                installer.install_control_plane(source_root=source, target=target, yes=True)
+
+            settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
+            command = settings["hooks"]["SessionStart"][0]["hooks"][0]["command"]
+            allow = settings["permissions"]["allow"]
+            session_hook = installer.normalize_command_path(
+                target.resolve() / ".claude" / "scripts" / "hook_session_start.py"
+            )
+            runner = installer.normalize_command_path(target.resolve() / ".claude" / "scripts" / "run_python.cmd")
+            self.assertEqual(command, f"{runner} {session_hook}")
+            self.assertIn('Bash("D:/Tools/ComfyUI-aki(1)/python/python.exe" *)', allow)
+            self.assertIn('Bash("D:/Tools/node&codex/codex.cmd" *)', allow)
+            self.assertIn(f"Bash({runner} *)", allow)
 
     def test_windows_command_paths_are_normalized_for_bash(self) -> None:
         self.assertEqual(

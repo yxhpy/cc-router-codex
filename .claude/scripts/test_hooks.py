@@ -7,6 +7,7 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -91,6 +92,7 @@ class HookTests(unittest.TestCase):
     def test_settings_hook_commands_resolve_inside_control_plane(self) -> None:
         settings = json.loads((ROOT / ".claude" / "settings.json").read_text(encoding="utf-8"))
         self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
+        self.assertEqual(settings["hooks"]["PreToolUse"][0]["matcher"], "")
         commands = [
             hook["command"]
             for hook_group in settings["hooks"].values()
@@ -129,6 +131,25 @@ class HookTests(unittest.TestCase):
         )
 
         self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_grok_allows_task_plan_prompt_file_in_target_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "demo"
+            prompt_file = workspace / ".claude" / "task-plans" / "uiux-prompt.txt"
+            code, output = run_hook(
+                HOOK,
+                {
+                    "hookEventName": "pre_tool_use",
+                    "workspaceRoot": str(workspace),
+                    "toolName": "write",
+                    "toolInput": {"path": str(prompt_file), "content": "Long worker prompt"},
+                },
+                {"GROK_HOOK_EVENT": "pre_tool_use"},
+            )
+
+        self.assertEqual(code, 0)
+        self.assertEqual(output["decision"], "allow")
         self.assertTrue(output["continue"])
 
     def test_blocks_control_plane_write_without_maintenance(self) -> None:
@@ -281,6 +302,26 @@ class HookTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertEqual(output["decision"], "block")
 
+    def test_allows_null_device_redirection_for_readonly_discovery(self) -> None:
+        command = (
+            'which taskctl.py || where taskctl.py || find /c/Users -name "taskctl.py" 2>/dev/null | head -5; '
+            'python -c "import sys; print(sys.executable)" 2>/dev/null; '
+            'ls "C:\\Users\\Administrator" >NUL'
+        )
+        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": command}})
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_blocks_stderr_redirection_to_real_file(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "python .claude/scripts/taskctl.py status 2>error.log"}},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+
     def test_blocks_multiedit_outside_claude(self) -> None:
         code, output = run_hook(HOOK, {"tool_name": "MultiEdit", "tool_input": {"file_path": "src/app.js"}})
 
@@ -311,6 +352,43 @@ class HookTests(unittest.TestCase):
                     "command": "python -c \"import sqlite3; conn=sqlite3.connect('.claude/taskctl.sqlite3'); conn.execute('UPDATE tasks SET status=\\'queued\\' WHERE id=1')\""
                 },
             },
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "block")
+
+    def test_allows_readonly_python_inline_probe(self) -> None:
+        command = (
+            "/c/Users/Administrator/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe -c '\n"
+            "import sys\n"
+            "sys.path.insert(0, \"C:/Users/Administrator/.grok/.claude/scripts\")\n"
+            "import task_input_filter as tif\n"
+            "print(tif.__file__)\n"
+            "'"
+        )
+        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": command}})
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_allows_readonly_python_inline_probe_with_typo_to_fail_in_shell(self) -> None:
+        command = (
+            "/c/Users/Administrator/AppData/Local/hermes/hermes-agent/venv/Scripts/python.exe -c '\n"
+            "import sys\n"
+            "sys.path.insert(0, \"C:/Users/Administrator/.grok/.claude/scripts\")\n"
+            "import task_input_filter as tif\n"
+            "prin(\n"
+            "'"
+        )
+        code, output = run_hook(HOOK, {"tool_name": "Bash", "tool_input": {"command": command}})
+
+        self.assertEqual(code, 0)
+        self.assertTrue(output["continue"])
+
+    def test_blocks_inline_python_file_write(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {"tool_name": "Bash", "tool_input": {"command": "python -c \"from pathlib import Path; Path('x.txt').write_text('x')\""}},
         )
 
         self.assertEqual(code, 2)
@@ -512,6 +590,64 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("hookSpecificOutput", output)
         self.assertNotIn("stopReason", output)
 
+    def test_grok_pretooluse_run_terminal_command_alias_blocks_with_deny_decision(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "hookEventName": "pre_tool_use",
+                "workspaceRoot": str(ROOT),
+                "toolName": "run_terminal_command",
+                "toolInput": {"command": "echo hello > product.txt"},
+            },
+            {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "deny")
+        self.assertFalse(output["continue"])
+        self.assertIn("Bash file operation blocked", output["reason"])
+
+    def test_grok_pretooluse_write_payload_blocks_with_deny_decision(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "hookEventName": "pre_tool_use",
+                "workspaceRoot": str(ROOT),
+                "toolName": "write",
+                "toolInput": {"path": "sample-page.html", "content": "<html></html>"},
+            },
+            {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "deny")
+        self.assertFalse(output["continue"])
+        self.assertIn("sample-page.html", output["reason"])
+        self.assertNotIn("hookSpecificOutput", output)
+        self.assertNotIn("stopReason", output)
+
+    @unittest.skipIf(os.name != "nt", "MSYS drive path normalization is Windows-specific")
+    def test_grok_pretooluse_write_payload_normalizes_msys_drive_path(self) -> None:
+        code, output = run_hook(
+            HOOK,
+            {
+                "hookEventName": "pre_tool_use",
+                "workspaceRoot": "/c/Users/Administrator/Desktop/demo3",
+                "toolName": "write",
+                "toolInput": {
+                    "path": "/c/Users/Administrator/Desktop/demo3/index.html",
+                    "content": "<html></html>",
+                },
+            },
+            {"GROK_HOOK_EVENT": "pre_tool_use"},
+        )
+
+        self.assertEqual(code, 2)
+        self.assertEqual(output["decision"], "deny")
+        self.assertIn("index.html", output["reason"])
+        self.assertIn("C:\\Users\\Administrator\\Desktop\\demo3", output["reason"])
+        self.assertNotIn("C:/c/Users/Administrator/Desktop/demo3/index.html", output["reason"])
+
     def test_grok_pretooluse_search_replace_payload_blocks_with_deny_decision(self) -> None:
         code, output = run_hook(
             HOOK,
@@ -544,6 +680,23 @@ class HookTests(unittest.TestCase):
         self.assertIn(f"Target workspace: {target_workspace}", context)
         self.assertIn(f'--workspace "{target_workspace}"', context)
         self.assertNotIn(f'--workspace "{ROOT}"', context)
+
+    def test_user_prompt_auto_initializes_project_runtime(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            target_workspace = Path(tmp) / "fresh-project"
+            code, output = run_hook(
+                PROMPT_HOOK,
+                {"prompt": "Build a single-page sample prototype.", "cwd": str(target_workspace)},
+                router_mock(artifacts=["html:sample-page.html"]),
+            )
+
+            self.assertEqual(code, 0)
+            context = output["hookSpecificOutput"]["additionalContext"]
+            self.assertIn(f"Target workspace: {target_workspace.resolve()}", context)
+            self.assertTrue((target_workspace / ".claude" / "cc-router-project.json").is_file())
+            self.assertTrue((target_workspace / ".claude" / ".env").is_file())
+            self.assertTrue((target_workspace / ".claude" / "task-plans" / "route-cache.json").is_file())
+            self.assertFalse((target_workspace / ".claude" / "scripts" / "taskctl.py").exists())
 
     def test_block_guidance_uses_payload_cwd_as_target_workspace(self) -> None:
         target_workspace = (ROOT.parent / "target-workspace").resolve()

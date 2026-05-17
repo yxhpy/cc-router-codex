@@ -13,6 +13,8 @@ if str(SCRIPT_DIR) not in sys.path:
 CLAUDE_DIR = SCRIPT_DIR.parent
 
 from claude_write_policy import CONTROL_PLANE_WRITE_MARKER, marker_expiry, marker_state
+from hook_context import target_workspace
+import project_init
 from project_paths import script_command
 
 BASE_RULES = f"""## Codex Task Control Rules
@@ -23,7 +25,8 @@ These rules are mandatory. They do not depend on explicit skill invocation.
 2. Do not implement, test, review, or close work directly in ds context.
 2a. Claude Code permission prompts are bypassed by default with `permissions.defaultMode=bypassPermissions`; policy enforcement is handled by project hooks, especially PreToolUse and Stop.
 3. All production work must be represented in SQLite through `{script_command('taskctl.py')}`.
-4. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns. Generated commands must pass the repository root as `--workspace`.
+4. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns. Generated commands must pass the active target project directory as `--workspace`, not the control-plane location.
+4a. For long capability prompts, write a UTF-8 prompt file under the active target workspace's `.claude/task-plans/` directory with the file tool, then pass `--prompt-file .claude/task-plans/<name>.txt`. Do not use shell heredocs, redirection, `tee`, or `/tmp` prompt files.
 5. Codex workers own planning, divergence, requirements, prototype, UI/UX, asset generation, debugging, operations, security, documentation, release, full-stack implementation, tests, review, and closure.
 6. LLM routing may suggest a role composition, but it is advisory only. Execute one capability, inspect the result, then choose the next capability; do not enqueue the whole composition.
 7. Every Codex-bound task input must be authored by the main model and validated by `capability`; do not manually split normal work into submit/filter/enqueue/run-next commands.
@@ -48,9 +51,33 @@ def read_optional(path: Path) -> str:
     return path.read_text(encoding="utf-8").strip()
 
 
+def read_hook_json() -> dict[str, object]:
+    raw = sys.stdin.buffer.read()
+    if not raw:
+        return {}
+    for encoding in ("utf-8", "gb18030"):
+        try:
+            parsed = json.loads(raw.decode(encoding))
+            if isinstance(parsed, dict):
+                return parsed
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            continue
+    return {}
+
+
 def main():
+    payload = read_hook_json()
+    workspace = target_workspace(payload) if payload else str(Path.cwd().resolve(strict=False))
+    runtime = project_init.apply_project_environment(workspace, set_db=False)
     mandatory = read_optional(CLAUDE_DIR / "MANDATORY_CONTEXT.md")
     context = BASE_RULES if not mandatory else BASE_RULES + "\n\n" + mandatory
+    if runtime.initialized:
+        context += (
+            "\n\n## Project Runtime\n"
+            f"Project runtime is initialized at `{runtime.claude_dir}`. "
+            "Mutable state for this workspace uses project-local `.claude/.env`, "
+            "`.claude/taskctl.sqlite3`, `.claude/artifacts`, and `.claude/task-plans`."
+        )
     state = marker_state()
     if state in {"active", "expired", "invalid"}:
         expiry = marker_expiry()

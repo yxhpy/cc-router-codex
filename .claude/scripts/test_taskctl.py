@@ -395,6 +395,63 @@ class TaskCtlTests(unittest.TestCase):
             row = conn.execute("SELECT kind, path FROM artifacts WHERE task_id = ?", (payload["task_id"],)).fetchone()
         self.assertEqual(dict(row), {"kind": "html", "path": "sample-page.html"})
 
+    def test_capability_accepts_prompt_file_from_task_plans(self) -> None:
+        prompt_dir = Path(self.workspace) / ".claude" / "task-plans"
+        prompt_dir.mkdir(parents=True)
+        prompt_file = prompt_dir / "long-prompt.txt"
+        prompt_file.write_text(
+            "Create the sample page at sample-page.html from the style_contract and record the html artifact.",
+            encoding="utf-8",
+        )
+        log_path = Path(self.tmp.name) / "codex-ok.log"
+        log_path.write_text("worker said ok", encoding="utf-8")
+
+        def fake_run(cmd, **kwargs):
+            self.assertIn("Create the sample page", cmd[-1])
+            Path(self.workspace, "sample-page.html").write_text("<html>ok</html>", encoding="utf-8")
+            return mock.Mock(returncode=0, stdout=f"SUCCESS\nLOG: {log_path}\n", stderr="")
+
+        with mock.patch.object(worker_runner.subprocess, "run", side_effect=fake_run):
+            payload = json.loads(
+                self.run_cli(
+                    "capability",
+                    "--role",
+                    "fullstack",
+                    "--title",
+                    "Create sample page",
+                    "--prompt-file",
+                    ".claude/task-plans/long-prompt.txt",
+                    "--artifact",
+                    "html:sample-page.html",
+                    "--workspace",
+                    self.workspace,
+                    "--json",
+                )
+            )
+
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertTrue(payload["audit_complete"])
+
+    def test_prompt_file_rejects_product_paths(self) -> None:
+        product_prompt = Path(self.workspace) / "prompt.txt"
+        product_prompt.write_text("Create a page.", encoding="utf-8")
+
+        with self.assertRaises(SystemExit) as rejected:
+            self.run_cli_result(
+                "filter-input",
+                "--role",
+                "docs",
+                "--title",
+                "Read prompt",
+                "--prompt-file",
+                "prompt.txt",
+                "--workspace",
+                self.workspace,
+                "--json",
+            )
+
+        self.assertIn(".claude/task-plans", str(rejected.exception))
+
     def test_capability_route_token_skips_duplicate_llm_guard(self) -> None:
         prompt = "Create the sample page at sample-page.html from the style_contract and record the html artifact."
         goal = "Create sample page"
@@ -524,7 +581,7 @@ class TaskCtlTests(unittest.TestCase):
         )
         task_id = int(output.split()[1])
         artifact_path = Path(self.workspace) / ".claude" / "artifacts" / "debug_report.md"
-        artifact_path.parent.mkdir(parents=True)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_text("# Debug Report\nLooks fine.\n", encoding="utf-8")
         self.run_cli(
             "artifact",
@@ -571,7 +628,7 @@ class TaskCtlTests(unittest.TestCase):
         )
         task_id = int(output.split()[1])
         artifact_path = Path(self.workspace) / ".claude" / "artifacts" / "debug_report.md"
-        artifact_path.parent.mkdir(parents=True)
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
         artifact_path.write_text(
             "\n".join(
                 [

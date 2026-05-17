@@ -6,6 +6,35 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.25 - 2026-05-17
+
+- Made Grok PreToolUse matching catch internal tool names such as `write` and
+  `run_terminal_command` by routing all PreToolUse events through the guard.
+- Normalized Windows MSYS-style Grok paths such as `/c/Users/...` before
+  classifying hook write targets.
+- Added lightweight project runtime auto-init for global installs so stable
+  control-plane files can live once in the user install while mutable project
+  state is created under the active workspace.
+- Quoted installed hook command paths that contain shell metacharacters such as
+  parentheses or ampersands, fixing Bash/Grok execution for paths like
+  `ComfyUI-aki(1)`.
+- Allowed read-only discovery commands to discard output with null-device
+  redirection such as `2>/dev/null` or `>NUL` without being misclassified as
+  shell file writes.
+- Allowed read-only `python -c` probes used for hook/module discovery while
+  still blocking inline Python file writes, filesystem mutations, subprocess
+  launches, and mutating SQLite statements.
+- Added a Windows `run_python.cmd` hook runner so installed Grok hooks can skip
+  stale `TASKCTL_PYTHON` absolute paths and fall back to a current Python
+  launcher with an actionable error if none exists.
+- Added `taskctl.py --prompt-file` support for `capability`, `enqueue`, and
+  `filter-input`, limited to workspace `.claude/task-plans/` and
+  `.claude/artifacts/`, so Grok can pass long prompts without shell heredocs.
+- Allowed Grok direct prompt-file writes under the active workspace's
+  `.claude/task-plans/` even when hooks run from a global control plane.
+- Added a safe in-place stale-project updater that preserves runtime artifacts
+  while refreshing scripts, hooks, settings, environment, and version files.
+
 ## 0.1.24 - 2026-05-17
 
 - Added Grok hook protocol compatibility for `toolName` / `toolInput` /
