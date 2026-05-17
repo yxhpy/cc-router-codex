@@ -16,9 +16,12 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 from typing import Any, Iterable, Mapping, Sequence
 
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -63,6 +66,69 @@ class OutputImage:
 
 def now_stamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_int(value: str | None) -> int | None:
+    if value is None or not value.strip():
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def progress_heartbeat_seconds() -> int:
+    value = _parse_int(os.environ.get("ASSETGEN_PROGRESS_HEARTBEAT_SECONDS"))
+    if value is None:
+        return 60
+    return max(0, value)
+
+
+class AssetgenProgress:
+    """Best-effort task DB progress writer for long-running asset generation."""
+
+    def __init__(self, db_path: Path | None, job_id: int | None, task_id: int | None) -> None:
+        self.db_path = db_path
+        self.job_id = job_id
+        self.task_id = task_id
+
+    @classmethod
+    def from_env(cls) -> "AssetgenProgress":
+        raw_db = os.environ.get("TASKCTL_DB", "").strip()
+        db_path = Path(raw_db) if raw_db else None
+        return cls(
+            db_path,
+            _parse_int(os.environ.get("TASKCTL_JOB_ID")),
+            _parse_int(os.environ.get("TASKCTL_TASK_ID")),
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.db_path and self.db_path.is_file())
+
+    def emit(self, message: str, *, event_type: str = "assetgen_progress") -> None:
+        if not self.enabled:
+            return
+        stamp = now_stamp()
+        conn: sqlite3.Connection | None = None
+        try:
+            conn = sqlite3.connect(str(self.db_path), timeout=30)
+            conn.execute("PRAGMA busy_timeout = 30000")
+            conn.execute(
+                "INSERT INTO events(job_id, task_id, type, message, created_at) VALUES (?, ?, ?, ?, ?)",
+                (self.job_id, self.task_id, event_type, message, stamp),
+            )
+            if self.task_id is not None:
+                try:
+                    conn.execute("UPDATE tasks SET updated_at = ? WHERE id = ?", (stamp, self.task_id))
+                except sqlite3.Error:
+                    pass
+            conn.commit()
+        except (OSError, sqlite3.Error):
+            return
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 def resolve_workspace(value: str) -> Path:
@@ -238,7 +304,13 @@ def parse_json_object(text: str) -> Mapping[str, Any]:
     return parsed
 
 
-def verify_payload(payload: Mapping[str, Any], images: Sequence[OutputImage], workspace: Path) -> None:
+def verify_payload(
+    payload: Mapping[str, Any],
+    images: Sequence[OutputImage],
+    workspace: Path,
+    *,
+    progress: AssetgenProgress | None = None,
+) -> None:
     items = payload.get("images")
     if not isinstance(items, list):
         raise AssetgenError("Codex JSON payload is missing images")
@@ -251,6 +323,11 @@ def verify_payload(payload: Mapping[str, Any], images: Sequence[OutputImage], wo
         if declared != expected.path:
             raise AssetgenError(f"Codex declared unexpected image path: {declared}")
         verify_raster(expected.path, expected.format)
+        if progress:
+            progress.emit(
+                "verified image %s/%s: %s"
+                % (expected.index, len(images), expected.path.relative_to(workspace).as_posix())
+            )
 
 
 def build_command(
@@ -293,24 +370,60 @@ def build_command(
     return cmd
 
 
-def run_codex(command: Sequence[str], prompt: str, *, timeout: int) -> subprocess.CompletedProcess[str]:
+def _heartbeat_progress(
+    progress: AssetgenProgress,
+    stop: threading.Event,
+    *,
+    interval_seconds: int,
+    message: str,
+) -> None:
+    started = time.monotonic()
+    while not stop.wait(interval_seconds):
+        elapsed = int(time.monotonic() - started)
+        progress.emit(f"{message}; elapsed={elapsed}s")
+
+
+def run_codex(
+    command: Sequence[str],
+    prompt: str,
+    *,
+    timeout: int,
+    progress: AssetgenProgress | None = None,
+    heartbeat_seconds: int | None = None,
+    heartbeat_message: str = "codex generation still running",
+) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env["NO_COLOR"] = "1"
     env["PYTHONIOENCODING"] = "utf-8"
     codex_exec._apply_proxy_env(env)
-    return subprocess.run(
-        list(command),
-        input=prompt,
-        cwd=None,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=timeout,
-        check=False,
-    )
+    stop = threading.Event()
+    heartbeat_thread: threading.Thread | None = None
+    if progress and progress.enabled and heartbeat_seconds and heartbeat_seconds > 0:
+        heartbeat_thread = threading.Thread(
+            target=_heartbeat_progress,
+            args=(progress, stop),
+            kwargs={"interval_seconds": heartbeat_seconds, "message": heartbeat_message},
+            daemon=True,
+        )
+        heartbeat_thread.start()
+    try:
+        return subprocess.run(
+            list(command),
+            input=prompt,
+            cwd=None,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+        )
+    finally:
+        stop.set()
+        if heartbeat_thread:
+            heartbeat_thread.join(timeout=1)
 
 
 def write_manifest(
@@ -365,6 +478,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    progress = AssetgenProgress.from_env()
     try:
         workspace = resolve_workspace(args.workspace)
         images = output_images(workspace, args.output or [])
@@ -373,6 +487,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.manifest
             else None
         )
+        target_text = ", ".join(image.path.relative_to(workspace).as_posix() for image in images)
+        progress.emit(f"requested {len(images)} raster image(s): {target_text}")
         prompt_context = prompt_template_mcp.build_asset_prompt_context(
             workspace,
             args.prompt,
@@ -386,6 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prompt_version = prompt_status.get("version") if isinstance(prompt_status, Mapping) else {}
         if isinstance(prompt_version, Mapping) and prompt_version.get("warning"):
             print(f"WARNING: {prompt_version['warning']}", file=sys.stderr)
+            progress.emit(f"prompt-template warning: {prompt_version['warning']}")
         for image in images:
             image.path.parent.mkdir(parents=True, exist_ok=True)
             if image.path.exists():
@@ -416,14 +533,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reasoning_effort=args.reasoning_effort,
                 sandbox=args.sandbox,
             )
-            result = run_codex(command, prompt, timeout=args.timeout)
+            progress.emit(f"codex generation started for {len(images)} image(s); timeout={args.timeout}s")
+            result = run_codex(
+                command,
+                prompt,
+                timeout=args.timeout,
+                progress=progress,
+                heartbeat_seconds=progress_heartbeat_seconds(),
+                heartbeat_message=f"codex generation still running for {len(images)} image(s)",
+            )
+            progress.emit(f"codex generation exited {result.returncode}")
             final_text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.exists() else result.stdout
             if result.returncode != 0:
                 raise AssetgenError(
                     "Codex image generation failed with exit %s\nstdout:\n%s\nstderr:\n%s"
                     % (result.returncode, result.stdout.strip(), result.stderr.strip())
                 )
-            verify_payload(parse_json_object(final_text), images, workspace)
+            verify_payload(parse_json_object(final_text), images, workspace, progress=progress)
         if manifest:
             write_manifest(
                 manifest,
@@ -434,6 +560,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 style=args.style,
                 prompt_template_mcp=prompt_metadata if isinstance(prompt_metadata, Mapping) else {},
             )
+            progress.emit(f"wrote manifest: {manifest.relative_to(workspace).as_posix()}")
+        progress.emit(f"assetgen complete: {len(images)} image(s)")
     except (
         AssetgenError,
         prompt_template_mcp.PromptTemplateMcpError,
@@ -442,6 +570,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         FileNotFoundError,
         json.JSONDecodeError,
     ) as exc:
+        progress.emit(f"assetgen failed: {exc}", event_type="assetgen_error")
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1
 

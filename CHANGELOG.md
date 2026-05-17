@@ -6,6 +6,16 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.27 - 2026-05-17
+
+- Added assetgen task DB progress events for request start, Codex generation
+  start/exit, per-image verification, manifest writes, completion, and failure.
+- Added an assetgen heartbeat while the Codex image-generation subprocess is
+  running so long multi-image generations keep `taskctl status` fresh instead
+  of looking stuck until final completion.
+- Assetgen progress writes refresh the running task `updated_at` timestamp to
+  avoid stale-status false positives during long but healthy generations.
+
 ## 0.1.26 - 2026-05-17
 
 - Added bounded service lifecycle instructions to every Codex worker prompt so

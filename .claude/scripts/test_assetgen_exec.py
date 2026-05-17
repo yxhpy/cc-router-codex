@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 import json
+import os
+import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
@@ -30,6 +33,17 @@ class AssetgenExecTests(unittest.TestCase):
             output_rel = "assets/generated/hero.png"
             manifest_rel = "assets/generated/manifest.json"
             output_path = workspace / output_rel
+            task_db = workspace / "taskctl.sqlite3"
+            old_updated_at = "2000-01-01T00:00:00Z"
+            with closing(sqlite3.connect(task_db)) as conn:
+                conn.execute(
+                    "CREATE TABLE events("
+                    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "job_id INTEGER, task_id INTEGER, type TEXT, message TEXT, created_at TEXT)"
+                )
+                conn.execute("CREATE TABLE tasks(id INTEGER PRIMARY KEY, updated_at TEXT NOT NULL)")
+                conn.execute("INSERT INTO tasks(id, updated_at) VALUES (?, ?)", (7, old_updated_at))
+                conn.commit()
 
             def fake_run(command, **kwargs):
                 self.assertEqual(command[0], "codex")
@@ -67,6 +81,14 @@ class AssetgenExecTests(unittest.TestCase):
                 "metadata": {"query": "type:template hero", "template_ids": ["template:hero"]},
             }
             with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "TASKCTL_DB": str(task_db),
+                        "TASKCTL_JOB_ID": "3",
+                        "TASKCTL_TASK_ID": "7",
+                    },
+                ),
                 mock.patch.object(assetgen_exec.subprocess, "run", side_effect=fake_run),
                 mock.patch.object(assetgen_exec.prompt_template_mcp, "build_asset_prompt_context", return_value=prompt_context),
             ):
@@ -93,6 +115,19 @@ class AssetgenExecTests(unittest.TestCase):
             self.assertEqual(manifest["backend"], "codex")
             self.assertEqual(manifest["images"][0]["path"], output_rel)
             self.assertEqual(manifest["prompt_template_mcp"]["template_ids"], ["template:hero"])
+            with closing(sqlite3.connect(task_db)) as conn:
+                rows = conn.execute("SELECT type, message, job_id, task_id FROM events ORDER BY id").fetchall()
+                updated_at = conn.execute("SELECT updated_at FROM tasks WHERE id = 7").fetchone()[0]
+
+            self.assertNotEqual(updated_at, old_updated_at)
+            self.assertTrue(all(row[0] == "assetgen_progress" for row in rows))
+            self.assertTrue(all(row[2:] == (3, 7) for row in rows))
+            messages = [row[1] for row in rows]
+            self.assertTrue(any("requested 1 raster image(s)" in message for message in messages))
+            self.assertTrue(any("codex generation started" in message for message in messages))
+            self.assertTrue(any("verified image 1/1" in message for message in messages))
+            self.assertTrue(any("wrote manifest" in message for message in messages))
+            self.assertTrue(any("assetgen complete" in message for message in messages))
 
 
 if __name__ == "__main__":
