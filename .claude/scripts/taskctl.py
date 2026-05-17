@@ -78,6 +78,7 @@ ROLE_BOUNDARY_MARKER = "[TASKCTL ROLE BOUNDARY]"
 FRONTEND_DESIGN_MARKER = "[TASKCTL FRONTEND DESIGN SOURCE]"
 PROJECT_CONTEXT_MARKER = "[TASKCTL PROJECT CONTEXT]"
 PROJECT_CONTEXT_TEMPLATE_MARKER = "[TASKCTL PROJECT CONTEXT TEMPLATE]"
+SERVICE_LIFECYCLE_MARKER = "[TASKCTL SERVICE LIFECYCLE]"
 REQUIRED_ARTIFACT_MARKER = "[TASKCTL REQUIRED ARTIFACTS]"
 ASSETGEN_IMAGE_KINDS = {"image", "asset", "sprite", "texture", "icon", "thumbnail", "key_art", "overlay", "render"}
 ASSETGEN_RASTER_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
@@ -512,6 +513,23 @@ Do not create these files as a side effect of unrelated documentation work.
 """
 
 
+def service_lifecycle_footer() -> str:
+    return f"""
+
+{SERVICE_LIFECYCLE_MARKER}
+All worker tasks must terminate and return control to taskctl. Do not run
+long-lived dev servers, watchers, or preview servers in the foreground.
+
+If a service is required for verification, start it in the background, write
+its PID and log path under `.claude/task-plans/` or `logs/`, poll the local URL
+with a short timeout, run the bounded check, and stop the service before
+finishing unless the user explicitly asked to leave it running. Foreground
+commands such as `npm run dev`, `pnpm dev`, `yarn dev`, `bun dev`, `next dev`,
+`vite --host`, or `python -m http.server` will make the task hang and may be
+terminated by the wrapper watchdog.
+"""
+
+
 def required_artifact_kinds_for_workflow(workflow: str) -> tuple[str, ...]:
     _ = workflow
     return ()
@@ -588,6 +606,8 @@ def attach_task_footers(prompt: str, role: str, required_artifacts: Iterable[str
         body += project_context_footer()
     if PROJECT_CONTEXT_TEMPLATE_MARKER not in body:
         body += project_context_template_footer(role)
+    if SERVICE_LIFECYCLE_MARKER not in body:
+        body += service_lifecycle_footer()
     body += artifact_contract_footer(required_artifacts)
     return attach_experience_footer(body)
 

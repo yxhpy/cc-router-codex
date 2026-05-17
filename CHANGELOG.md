@@ -6,6 +6,15 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.26 - 2026-05-17
+
+- Added bounded service lifecycle instructions to every Codex worker prompt so
+  dev servers and watchers must be started in the background, verified, and
+  stopped before task completion.
+- Added a `codex_exec.py` foreground dev-server watchdog that detects common
+  ready/listening log patterns and terminates stuck foreground server runs
+  after `CODEX_FOREGROUND_SERVER_GUARD_SECONDS` seconds, defaulting to 45.
+
 ## 0.1.25 - 2026-05-17
 
 - Made Grok PreToolUse matching catch internal tool names such as `write` and

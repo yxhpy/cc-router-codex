@@ -25,11 +25,13 @@ Env vars:
   CODEX_PROXY -> optional single proxy URL copied to HTTP(S)/ALL proxy vars
   CODEX_MODEL -> optional Codex model override
   CODEX_REASONING_EFFORT -> optional Codex CLI reasoning effort override
+  CODEX_FOREGROUND_SERVER_GUARD_SECONDS -> seconds before killing a foreground dev server (default: 45, 0 disables)
   --reasoning-effort -> per-run reasoning effort override
 """
 
 import argparse
 import os
+import signal
 import shutil
 import subprocess
 import sys
@@ -57,6 +59,41 @@ FATAL_LOG_PATTERNS = (
     "failed: 1326",
     "windows sandbox error",
 )
+FOREGROUND_SERVER_PATTERNS = (
+    "local:   http://",
+    "local: http://",
+    "- local:",
+    "serving http on",
+    "server running at",
+    "project is running at",
+    "listening on http://",
+    "ready in",
+    "compiled successfully",
+)
+
+EXECUTION_CONTRACT = """
+
+=== BOUNDED WORKER EXECUTION CONTRACT ===
+This Codex worker must finish and return control to taskctl. Do not run
+long-lived servers in the foreground.
+
+Forbidden foreground commands include `npm run dev`, `pnpm dev`, `yarn dev`,
+`bun dev`, `vite --host`, `next dev`, `python -m http.server`, and any command
+that starts a watcher or service and waits forever.
+
+If a server is required for verification:
+1. Start it in the background with stdout/stderr redirected to a log under
+   `.claude/task-plans/` or `logs/`, and record its PID.
+2. Poll the expected local URL until ready, with a short timeout.
+3. Run the bounded verification.
+4. Stop the server before finishing, unless the user explicitly asked to leave
+   it running.
+
+On Windows prefer `Start-Process -WindowStyle Hidden -PassThru` and write the
+PID/log path to `.claude/task-plans/`. On POSIX shells prefer `nohup ... >log
+2>&1 & echo $! > .claude/task-plans/<name>.pid`.
+=== END BOUNDED WORKER EXECUTION CONTRACT ===
+"""
 
 
 def _find_codex() -> str:
@@ -124,6 +161,76 @@ def _fatal_log_reason(text: str) -> str:
             if pattern.lower() in folded:
                 return f"fatal worker log pattern detected: {pattern}"
     return ""
+
+
+def _foreground_server_reason(text: str) -> str:
+    folded = (text or "").lower()
+    for pattern in FOREGROUND_SERVER_PATTERNS:
+        if pattern in folded:
+            return pattern
+    return ""
+
+
+def _tail_text(path: Path, limit: int = 65536) -> str:
+    try:
+        with path.open("rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - limit), os.SEEK_SET)
+            return handle.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+
+
+def _foreground_server_guard_seconds() -> int:
+    value = os.environ.get("CODEX_FOREGROUND_SERVER_GUARD_SECONDS", "45")
+    try:
+        seconds = int(value)
+    except ValueError:
+        return 45
+    return max(0, seconds)
+
+
+def _popen_process_group_kwargs() -> dict[str, object]:
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
+    return {"preexec_fn": os.setsid}
+
+
+def _terminate_process_tree(process: subprocess.Popen[str]) -> None:
+    if process.poll() is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10,
+            )
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+    except Exception:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        try:
+            if sys.platform == "win32":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+        except Exception:
+            pass
+
+
+def _append_execution_contract(prompt: str) -> str:
+    if "=== BOUNDED WORKER EXECUTION CONTRACT ===" in prompt:
+        return prompt
+    return prompt.rstrip() + EXECUTION_CONTRACT
 
 
 def _first_env(env: dict[str, str], names: tuple[str, ...]) -> str:
@@ -273,6 +380,65 @@ def _codex_stdio_kwargs(log_file_handle):
     }
 
 
+def _run_codex_with_watchdog(
+    cmd: list[str],
+    *,
+    prompt: str,
+    env: dict[str, str],
+    log_file: Path,
+    log_file_handle,
+    guard_seconds: int,
+) -> tuple[int, str]:
+    process = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        env=env,
+        **_codex_stdio_kwargs(log_file_handle),
+        **_popen_process_group_kwargs(),
+    )
+    guard_started_at: float | None = None
+    guard_reason = ""
+    try:
+        if process.stdin is not None:
+            try:
+                process.stdin.write(prompt)
+            except BrokenPipeError:
+                pass
+            try:
+                process.stdin.close()
+            except BrokenPipeError:
+                pass
+
+        while True:
+            return_code = process.poll()
+            if return_code is not None:
+                return int(return_code), ""
+
+            if guard_seconds > 0:
+                reason = _foreground_server_reason(_tail_text(log_file))
+                if reason:
+                    if guard_started_at is None:
+                        guard_started_at = time.time()
+                        guard_reason = reason
+                    elif time.time() - guard_started_at >= guard_seconds:
+                        _terminate_process_tree(process)
+                        return (
+                            124,
+                            "FOREGROUND_SERVER_BLOCKED: detected a long-running server "
+                            f"pattern ({guard_reason!r}) and Codex was still running after "
+                            f"{guard_seconds} seconds. Start dev servers in the background, "
+                            "run bounded checks, then stop them before finishing.",
+                        )
+                else:
+                    guard_started_at = None
+                    guard_reason = ""
+
+            time.sleep(1)
+    except BaseException:
+        _terminate_process_tree(process)
+        raise
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Codex CLI wrapper with mandatory log capture",
@@ -303,6 +469,7 @@ def main():
         print("  CODEX_PROXY → optional proxy URL for Codex child process")
         print("  CODEX_MODEL → optional model override")
         print("  CODEX_REASONING_EFFORT → optional reasoning effort override")
+        print("  CODEX_FOREGROUND_SERVER_GUARD_SECONDS → foreground dev-server watchdog seconds")
         print("  --reasoning-effort → per-run reasoning effort override")
         sys.exit(0 if args.help else 1)
 
@@ -320,9 +487,11 @@ def main():
         ws_path = Path(args.workspace)
         ws_path.mkdir(parents=True, exist_ok=True)
 
+    worker_prompt = _append_execution_contract(args.prompt)
+
     # ── Pre-flight safety check: validate prompt BEFORE sending to codex ──
     if not args.skip_safety:
-        safety_result = _safety_check(args.prompt, require_anchor=False, deep=True)
+        safety_result = _safety_check(worker_prompt, require_anchor=False, deep=True)
         if not safety_result.passed:
             print("SAFETY BLOCK: Prompt rejected by local safety filter")
             for v in safety_result.violations:
@@ -372,7 +541,7 @@ def main():
         if sandbox_note:
             f.write(f"Sandbox note: {sandbox_note}\n")
         f.write(f"Model:      {model_override or '(config default)'}\n")
-        f.write(f"Prompt len: {len(args.prompt)} chars\n")
+        f.write(f"Prompt len: {len(worker_prompt)} chars\n")
         f.write(f"Proxy env:  {', '.join(proxy_names) if proxy_names else '(none)'}\n")
         if reasoning_effort:
             f.write(f"Reasoning:  override {reasoning_effort}\n")
@@ -384,19 +553,24 @@ def main():
     # Execute codex
     exit_code = 0
     verbose = os.environ.get("CODEX_VERBOSE") == "1"
+    guard_message = ""
+    guard_seconds = _foreground_server_guard_seconds()
 
     try:
         with open(log_file, "a", encoding="utf-8", errors="replace") as log_f:
             # Write directly to the log file instead of capturing pipes. Long-running
             # browser/dev-server descendants can inherit stdout handles; with PIPE,
             # Python may wait forever for EOF after Codex itself has finished.
-            result = subprocess.run(
+            exit_code, guard_message = _run_codex_with_watchdog(
                 cmd,
-                input=args.prompt,
+                prompt=worker_prompt,
                 env=child_env,
-                **_codex_stdio_kwargs(log_f),
+                log_file=log_file,
+                log_file_handle=log_f,
+                guard_seconds=guard_seconds,
             )
-            exit_code = result.returncode
+            if guard_message:
+                log_f.write("\n" + guard_message + "\n")
             if verbose:
                 log_f.flush()
                 try:

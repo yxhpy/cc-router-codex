@@ -3,6 +3,10 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -108,6 +112,43 @@ class CodexExecEnvTests(unittest.TestCase):
         self.assertEqual(kwargs["stderr"], codex_exec.subprocess.STDOUT)
         self.assertNotIn("capture_output", kwargs)
         self.assertEqual(kwargs["encoding"], "utf-8")
+
+    def test_worker_prompt_gets_bounded_execution_contract(self) -> None:
+        prompt = codex_exec._append_execution_contract("Implement the page.")
+
+        self.assertIn("BOUNDED WORKER EXECUTION CONTRACT", prompt)
+        self.assertIn("Do not run\nlong-lived servers in the foreground", prompt)
+        self.assertIn("Start-Process", prompt)
+        self.assertIn("nohup", prompt)
+
+    def test_foreground_server_patterns_are_detected(self) -> None:
+        reason = codex_exec._foreground_server_reason("  Local:   http://localhost:5173/")
+
+        self.assertEqual(reason, "local:   http://")
+
+    def test_foreground_server_guard_seconds_can_be_disabled(self) -> None:
+        with mock.patch.dict(codex_exec.os.environ, {"CODEX_FOREGROUND_SERVER_GUARD_SECONDS": "0"}):
+            self.assertEqual(codex_exec._foreground_server_guard_seconds(), 0)
+
+    def test_foreground_server_watchdog_terminates_ready_process(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            log_path = Path(tmp) / "codex.log"
+            with log_path.open("w", encoding="utf-8", errors="replace") as log_f:
+                code, message = codex_exec._run_codex_with_watchdog(
+                    [
+                        sys.executable,
+                        "-c",
+                        "import time; print('Local:   http://localhost:5173/', flush=True); time.sleep(30)",
+                    ],
+                    prompt="",
+                    env=os.environ.copy(),
+                    log_file=log_path,
+                    log_file_handle=log_f,
+                    guard_seconds=1,
+                )
+
+        self.assertEqual(code, 124)
+        self.assertIn("FOREGROUND_SERVER_BLOCKED", message)
 
     def test_windows_sandbox_error_is_fatal_pattern(self) -> None:
         reason = codex_exec._fatal_log_reason(
