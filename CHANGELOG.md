@@ -6,6 +6,13 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.34 - 2026-05-18
+
+- Compacted the auto-loaded `CLAUDE.md` control rules and moved expanded detail
+  behind hook/taskctl enforcement to reduce every Claude Code startup prompt.
+- Updated installs to refresh `.claude/CLAUDE.md` as well as root `CLAUDE.md`,
+  replacing stale expanded global memory files from older installs.
+
 ## 0.1.33 - 2026-05-18
 
 - Changed SessionStart to inject a compact control context by default, removing

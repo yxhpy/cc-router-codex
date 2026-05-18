@@ -491,6 +491,7 @@ def install_control_plane(
     copy_claude_tree(source_claude, target / ".claude", merge=merge_user_claude)
     install_settings(source_claude / "settings.json", target / ".claude" / "settings.json", merge=merge_user_claude)
     shutil.copy2(source_claude_md, target / "CLAUDE.md")
+    shutil.copy2(source_claude_md, target / ".claude" / "CLAUDE.md")
     if source_version.is_file():
         shutil.copy2(source_version, target / "VERSION")
     if source_versioning.is_file():
@@ -504,7 +505,7 @@ def install_control_plane(
     settings_path = target / ".claude" / "settings.json"
     rewrite_settings(settings_path, detection)
 
-    copied_items = [".claude", "CLAUDE.md"]
+    copied_items = [".claude", "CLAUDE.md", ".claude/CLAUDE.md"]
     if source_version.is_file():
         copied_items.append("VERSION")
     if source_versioning.is_file():

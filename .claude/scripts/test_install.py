@@ -111,6 +111,7 @@ class InstallTests(unittest.TestCase):
             self.assertEqual(result.target, target.resolve())
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
             self.assertTrue((target / "CLAUDE.md").exists())
+            self.assertEqual((target / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
             self.assertFalse((target / "CONTEXT.md").exists())
             self.assertFalse((target / "docs" / "adr").exists())
             self.assertTrue((target / "VERSION").exists())
@@ -254,6 +255,7 @@ class InstallTests(unittest.TestCase):
 
             self.assertFalse((target / ".claude" / "old.txt").exists())
             self.assertEqual((target / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
+            self.assertEqual((target / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
             self.assertEqual((target / "VERSION").read_text(encoding="utf-8"), "0.1.0\n")
             self.assertEqual((target / "VERSIONING.md").read_text(encoding="utf-8"), "# Versioning\n")
 
@@ -299,6 +301,7 @@ class InstallTests(unittest.TestCase):
             self.assertTrue((target / ".claude" / "sessions").is_dir())
             self.assertEqual((target / ".claude" / "history.jsonl").read_text(encoding="utf-8"), "{}\n")
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
+            self.assertEqual((target / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
 
             settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
             self.assertEqual(settings["env"]["ANTHROPIC_MODEL"], "configured-model")
