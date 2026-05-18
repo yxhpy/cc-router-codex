@@ -378,7 +378,15 @@ class TaskCtlTests(unittest.TestCase):
 
         self.assertEqual(dry_run["role"], "assetgen")
         self.assertIn("--fast", dry_run["command"])
+        self.assertEqual(dry_run["command"][dry_run["command"].index("--asset-role") + 1], "web")
         self.assertEqual(dry_run["model_policy"]["speed_profile"], "fast")
+
+    def test_assetgen_role_inference_does_not_match_prop_inside_prompt(self) -> None:
+        self.assertEqual(
+            taskctl.infer_asset_role("Generate hero", "Generate a web hero image and record prompt metadata."),
+            "web",
+        )
+        self.assertEqual(taskctl.infer_asset_role("Generate prop", "Create a small game prop."), "game")
 
     def test_execute_task_requires_step_artifacts(self) -> None:
         job_id = self.submit_job()

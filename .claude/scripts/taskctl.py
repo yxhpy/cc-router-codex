@@ -1574,11 +1574,14 @@ def assetgen_command_paths(required_artifacts_json: str | None) -> tuple[list[st
 
 def infer_asset_role(title: str, prompt: str) -> str:
     folded = f"{title}\n{prompt}".lower()
-    if any(word in folded for word in ("game", "sprite", "texture", "tile", "prop")):
+    def has_any(words: Iterable[str]) -> bool:
+        return any(re.search(rf"\b{re.escape(word)}\b", folded) for word in words)
+
+    if has_any(("game", "sprite", "texture", "tile", "prop")):
         return "game"
-    if any(word in folded for word in ("video", "thumbnail", "key art", "storyboard", "overlay")):
+    if has_any(("video", "thumbnail", "key art", "storyboard", "overlay")):
         return "video"
-    if any(word in folded for word in ("web", "website", "hero", "banner", "landing", "app")):
+    if has_any(("web", "website", "hero", "banner", "landing", "app")):
         return "web"
     return "other"
 
@@ -1600,7 +1603,7 @@ def build_worker_command(
             "--prompt",
             strip_task_footers(task["prompt"]),
             "--asset-role",
-            infer_asset_role(task["title"], task["prompt"]),
+            infer_asset_role(task["title"], strip_task_footers(task["prompt"])),
             "--prompt-template-top",
             os.environ.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3"),
         ]

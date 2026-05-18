@@ -6,6 +6,12 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.38 - 2026-05-18
+
+- Fixed asset-role inference so footer text and words such as `prompt` no
+  longer accidentally match the game-asset `prop` role; web hero assets now stay
+  in the web role during fast asset generation.
+
 ## 0.1.37 - 2026-05-18
 
 - Added fast asset generation mode: `assetgen_exec.py --fast` skips
