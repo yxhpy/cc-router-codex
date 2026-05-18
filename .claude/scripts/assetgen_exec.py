@@ -77,6 +77,10 @@ def _parse_int(value: str | None) -> int | None:
         return None
 
 
+def env_enabled(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in {"1", "true", "yes", "on", "fast"}
+
+
 def progress_heartbeat_seconds() -> int:
     value = _parse_int(os.environ.get("ASSETGEN_PROGRESS_HEARTBEAT_SECONDS"))
     if value is None:
@@ -191,6 +195,15 @@ def verify_raster(path: Path, image_format: str) -> None:
         raise AssetgenError(f"generated file is not a WebP image: {path}")
 
 
+def all_outputs_valid(images: Sequence[OutputImage]) -> tuple[bool, str]:
+    try:
+        for image in images:
+            verify_raster(image.path, image.format)
+    except AssetgenError as exc:
+        return False, str(exc)
+    return True, ""
+
+
 def build_output_schema(count: int) -> dict[str, Any]:
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -254,9 +267,26 @@ def build_codex_prompt(
     style: str,
     asset_role: str,
     template_context: str,
+    fast: bool = False,
 ) -> str:
     targets = "\n".join(f"{image.index}. {image.path} ({image.format})" for image in images)
     style_line = style.strip() if style and style.strip() else "Use the user request and asset role as the style source."
+    if fast:
+        return f"""Create exactly {len(images)} production raster image file(s).
+
+{asset_prompt(prompt, asset_role)}
+
+Outputs:
+{targets}
+
+Fast generation contract:
+- Prompt-template MCP skipped: retrieval was skipped for lower latency.
+- Write real {", ".join(sorted({image.format for image in images}))} raster data at the exact requested path(s).
+- Target size: {size}
+- Style guidance: {style_line}
+- Do not create SVG, HTML, CSS, placeholders, or alternate filenames.
+- Respond only with JSON matching the supplied schema after the file(s) exist.
+"""
     return f"""You are a Codex image asset backend.
 
 Create exactly {len(images)} raster image file(s) for this asset request:
@@ -472,6 +502,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--codex-bin", default=os.environ.get("CODEX_BIN", ""))
     parser.add_argument("--timeout", type=int, default=int(os.environ.get("ASSETGEN_CODEX_TIMEOUT", "900")))
     parser.add_argument("--prompt-template-top", type=int, default=int(os.environ.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3")))
+    parser.add_argument("--fast", action="store_true", default=env_enabled("ASSETGEN_FAST"), help="Skip prompt-template MCP retrieval and use a compact generation prompt.")
+    parser.add_argument("--reuse-existing", action="store_true", default=env_enabled("ASSETGEN_REUSE_EXISTING"), help="Return existing valid raster outputs without starting Codex.")
     return parser
 
 
@@ -489,14 +521,43 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         target_text = ", ".join(image.path.relative_to(workspace).as_posix() for image in images)
         progress.emit(f"requested {len(images)} raster image(s): {target_text}")
-        prompt_context = prompt_template_mcp.build_asset_prompt_context(
-            workspace,
-            args.prompt,
-            asset_role=args.asset_role,
-            size=args.size,
-            style=args.style,
-            top=max(1, args.prompt_template_top),
-        )
+        if args.reuse_existing:
+            valid, reason = all_outputs_valid(images)
+            if valid:
+                if manifest:
+                    write_manifest(
+                        manifest,
+                        workspace,
+                        images,
+                        prompt=args.prompt,
+                        size=args.size,
+                        style=args.style,
+                        prompt_template_mcp={"mode": "reuse_existing", "skipped": True},
+                    )
+                    progress.emit(f"wrote manifest: {manifest.relative_to(workspace).as_posix()}")
+                progress.emit(f"assetgen reused existing outputs: {len(images)} image(s)")
+                print("SUCCESS")
+                for image in images:
+                    print(image.path.relative_to(workspace).as_posix())
+                if manifest:
+                    print(f"MANIFEST: {manifest.relative_to(workspace).as_posix()}")
+                return 0
+            progress.emit(f"reuse-existing skipped: {reason}")
+        if args.fast or args.prompt_template_top <= 0:
+            progress.emit("prompt-template MCP skipped for fast assetgen")
+            prompt_context = {
+                "text": "Prompt-template MCP skipped by fast assetgen mode.",
+                "metadata": {"mode": "fast", "skipped_prompt_template_mcp": True},
+            }
+        else:
+            prompt_context = prompt_template_mcp.build_asset_prompt_context(
+                workspace,
+                args.prompt,
+                asset_role=args.asset_role,
+                size=args.size,
+                style=args.style,
+                top=max(1, args.prompt_template_top),
+            )
         prompt_metadata = prompt_context.get("metadata") if isinstance(prompt_context, Mapping) else {}
         prompt_status = prompt_metadata.get("status") if isinstance(prompt_metadata, Mapping) else {}
         prompt_version = prompt_status.get("version") if isinstance(prompt_status, Mapping) else {}
@@ -522,6 +583,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 style=args.style,
                 asset_role=args.asset_role,
                 template_context=str(prompt_context.get("text") or ""),
+                fast=bool(args.fast or args.prompt_template_top <= 0),
             )
             command = build_command(
                 codex_bin=codex_bin,

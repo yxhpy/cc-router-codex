@@ -129,6 +129,94 @@ class AssetgenExecTests(unittest.TestCase):
             self.assertTrue(any("wrote manifest" in message for message in messages))
             self.assertTrue(any("assetgen complete" in message for message in messages))
 
+    def test_fast_mode_skips_prompt_template_mcp(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            output_rel = "assets/generated/hero.png"
+            output_path = workspace / output_rel
+
+            def fake_run(command, **kwargs):
+                self.assertIn("Fast generation contract:", kwargs["input"])
+                self.assertIn("Prompt-template MCP skipped", kwargs["input"])
+                message_path = Path(command[command.index("--output-last-message") + 1])
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_bytes(PNG_BYTES)
+                message_path.write_text(
+                    json.dumps(
+                        {
+                            "images": [
+                                {
+                                    "index": 1,
+                                    "path": str(output_path),
+                                    "format": "png",
+                                    "description": "fast test image",
+                                }
+                            ],
+                            "notes": "ok",
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+                return mock.Mock(returncode=0, stdout="", stderr="")
+
+            with (
+                mock.patch.object(assetgen_exec.subprocess, "run", side_effect=fake_run),
+                mock.patch.object(assetgen_exec.prompt_template_mcp, "build_asset_prompt_context") as prompt_context,
+            ):
+                code = assetgen_exec.main(
+                    [
+                        "--workspace",
+                        str(workspace),
+                        "--prompt",
+                        "Create a web hero image.",
+                        "--output",
+                        output_rel,
+                        "--asset-role",
+                        "web",
+                        "--codex-bin",
+                        "codex",
+                        "--fast",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertFalse(prompt_context.called)
+            self.assertEqual(output_path.read_bytes(), PNG_BYTES)
+
+    def test_reuse_existing_valid_output_skips_codex(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp).resolve()
+            output_rel = "assets/generated/hero.png"
+            manifest_rel = "assets/generated/manifest.json"
+            output_path = workspace / output_rel
+            output_path.parent.mkdir(parents=True)
+            output_path.write_bytes(PNG_BYTES)
+
+            with (
+                mock.patch.object(assetgen_exec.subprocess, "run") as codex_run,
+                mock.patch.object(assetgen_exec.prompt_template_mcp, "build_asset_prompt_context") as prompt_context,
+            ):
+                code = assetgen_exec.main(
+                    [
+                        "--workspace",
+                        str(workspace),
+                        "--prompt",
+                        "Create a web hero image.",
+                        "--output",
+                        output_rel,
+                        "--manifest",
+                        manifest_rel,
+                        "--reuse-existing",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            self.assertFalse(codex_run.called)
+            self.assertFalse(prompt_context.called)
+            manifest = json.loads((workspace / manifest_rel).read_text(encoding="utf-8"))
+            self.assertEqual(manifest["images"][0]["path"], output_rel)
+            self.assertEqual(manifest["prompt_template_mcp"]["mode"], "reuse_existing")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,6 +6,16 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.37 - 2026-05-18
+
+- Added fast asset generation mode: `assetgen_exec.py --fast` skips
+  prompt-template MCP retrieval and uses a compact Codex generation prompt while
+  still requiring verified local raster outputs.
+- Added `--reuse-existing` / `ASSETGEN_REUSE_EXISTING=1` to reuse existing
+  valid raster files and rewrite the manifest without starting Codex.
+- Wired `taskctl run-next --speed-profile fast` to pass `--fast` into assetgen
+  tasks.
+
 ## 0.1.36 - 2026-05-18
 
 - Added `claude_submit.cmd` / `claude_submit.ps1`, a stricter Bash-only Claude

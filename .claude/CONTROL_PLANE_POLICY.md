@@ -16,7 +16,8 @@ scratch directory.
   control plane should capture prompts and constraints in an
   `asset_generation_brief`, then the `assetgen` role should create or place the
   resulting files under a local project asset directory and record a
-  `local_asset_manifest`.
+  `local_asset_manifest`. Fast assetgen may skip prompt-template retrieval, but
+  it still must verify real local raster outputs.
 
 ## File Decomposition
 

@@ -158,6 +158,8 @@ class InstallTests(unittest.TestCase):
             self.assertIn("TASKCTL_INTERACTIVE_SPEED_PROFILE=quality", env_text)
             self.assertIn("TASKCTL_INTERACTIVE_ASYNC=0", env_text)
             self.assertIn("ASSETGEN_CODEX_MODEL=gpt-5.4-mini", env_text)
+            self.assertIn("ASSETGEN_FAST=0", env_text)
+            self.assertIn("ASSETGEN_REUSE_EXISTING=0", env_text)
             self.assertIn("ASSETGEN_PROMPT_MCP_TARGET=.prompt-searcher", env_text)
             self.assertIn("ASSETGEN_PROMPT_MCP_REPO=https://github.com/yxhpy/image-2-prompt", env_text)
             self.assertIn("ASSETGEN_PROMPT_MCP_VERSION_TIMEOUT=5", env_text)

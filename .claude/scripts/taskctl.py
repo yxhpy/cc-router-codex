@@ -93,7 +93,7 @@ ROLE_BOUNDARIES = {
     "requirements": "Produce requirements, acceptance checks, and constraints only. Do not create or modify product code.",
     "uiux": "Produce design artifacts only, such as style inventory, design reference selection, component map, style contract, or visual review notes. Do not create HTML/CSS/JS/TSX/backend/schema/migration files.",
     "prototype": "Produce prototype specifications, DOM/interaction contracts, and behavior notes only. Do not create production UI code.",
-    "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py. That script must fast-check/install the local image-2-prompt MCP, compare installed/latest MCP git commit versions and warn if an upgrade may be needed, retrieve prompt templates, and use gpt-5.4-mini before raster generation. Assetgen covers game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
+    "assetgen": "Produce or place local raster image assets only through .claude/scripts/assetgen_exec.py. Quality mode fast-checks/installs the local image-2-prompt MCP, compares installed/latest MCP git commit versions, warns if an upgrade may be needed, retrieves prompt templates, and uses gpt-5.4-mini before raster generation. Fast mode may skip template MCP retrieval for lower latency while still verifying raster outputs. Assetgen covers game sprites, icons, textures, web visuals, video thumbnails, key art, overlays, asset_generation_brief, or local_asset_manifest. Do not create SVG, HTML/CSS/JS/TSX/backend/schema/migration files.",
     "debugger": "Reproduce failures, inspect logs, isolate root cause, and produce debugging reports or minimal fix recommendations only. Do not patch product code.",
     "operator": "Handle installs, dependencies, builds, CI, Docker, packaging, deploys, runtime health, and operational runbooks. Do not create or modify product source code.",
     "security": "Produce security reviews, threat models, dependency audits, permission analyses, and remediation plans only. Do not patch product code.",
@@ -1604,6 +1604,8 @@ def build_worker_command(
             "--prompt-template-top",
             os.environ.get("ASSETGEN_PROMPT_TEMPLATE_TOP", "3"),
         ]
+        if speed_profile(speed) == "fast":
+            cmd.append("--fast")
         for output_path in outputs:
             cmd.extend(["--output", output_path])
         if manifest:

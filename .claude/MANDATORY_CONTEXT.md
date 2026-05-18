@@ -81,7 +81,9 @@ skill invocation.
    `asset_generation_brief` that can guide the `assetgen` role to create
    localized bitmap assets. Assetgen must store generated assets under a local
    project asset directory and record a `local_asset_manifest`; do not leave
-   remote hotlinks or blank placeholders as the production asset path.
+   remote hotlinks or blank placeholders as the production asset path. Quality
+   mode may retrieve prompt templates; fast mode may skip template retrieval
+   but must still verify real raster outputs.
 10. Codex workers own planning, divergence, requirements, prototype, UI/UX,
     asset generation, debugging, operations, security, documentation, release,
     full-stack work, tests, review, and closure.
@@ -132,6 +134,8 @@ skill invocation.
     cached resources when no upstream refresh is needed.
     Generated bitmap assets are allowed when they are recorded as local files
     and trace back to an `asset_generation_brief` or project design source.
+    Fast assetgen may skip prompt-template MCP retrieval only when local raster
+    outputs and any manifest are still verified.
 17a. `CONTEXT.md` and `docs/adr/` are optional project-owned soft inputs.
     Workers should read them when present before vocabulary, naming,
     architecture, persistence, API, deployment, dependency, storage, or

@@ -359,6 +359,27 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn("gpt-5.4-mini", dry_run["command"])
         self.assertIn("--prompt-template-top", dry_run["command"])
 
+    def test_assetgen_fast_profile_uses_fast_assetgen_mode(self) -> None:
+        job_id = self.submit_job()
+        self.run_cli(
+            "enqueue",
+            str(job_id),
+            "--role",
+            "assetgen",
+            "--title",
+            "Generate reusable web hero",
+            "--prompt",
+            "Generate a reusable web hero image at assets/generated/hero.png.",
+            "--required-artifact",
+            "image:assets/generated/hero.png",
+        )
+
+        dry_run = json.loads(self.run_cli("run-next", str(job_id), "--dry-run", "--speed-profile", "fast"))
+
+        self.assertEqual(dry_run["role"], "assetgen")
+        self.assertIn("--fast", dry_run["command"])
+        self.assertEqual(dry_run["model_policy"]["speed_profile"], "fast")
+
     def test_execute_task_requires_step_artifacts(self) -> None:
         job_id = self.submit_job()
         task_id = self.enqueue_step(job_id)

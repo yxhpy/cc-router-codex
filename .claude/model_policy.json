@@ -99,6 +99,8 @@
     "TASKCTL_SESSION_CONTEXT_PROFILE=compact": "Keeps Claude SessionStart policy injection small; set to full only for debugging expanded rules.",
     "TASKCTL_INTERACTIVE_SPEED_PROFILE=fast": "Adds --speed-profile fast to hook-suggested capability commands.",
     "TASKCTL_INTERACTIVE_ASYNC=1": "Adds --async to hook-suggested capability commands so submission returns before the worker finishes.",
+    "ASSETGEN_FAST=1": "Skips prompt-template MCP retrieval for lower-latency local raster generation.",
+    "ASSETGEN_REUSE_EXISTING=1": "Reuses existing valid raster outputs and rewrites manifests without starting Codex.",
     "TASKCTL_MODEL_POLICY": "Set to off to disable taskctl model routing.",
     "TASKCTL_MODEL_POLICY_PATH": "Path to an alternate JSON policy file."
   }
