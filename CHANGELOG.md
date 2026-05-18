@@ -6,6 +6,19 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.32 - 2026-05-18
+
+- Added a `--speed-profile fast` capability/run-next option that downshifts
+  worker model policy for lower-latency interactive runs and automatically uses
+  compact worker policy footers.
+- Added `--async` capability submission so taskctl can return job/task/pid
+  immediately while the worker continues through a background `run-next`.
+- Added a deterministic `--validator html-smoke` tester path for local HTML
+  checks such as required text, button count, and no `http://` or `https://`
+  URLs, avoiding a model worker for simple smoke verification.
+- Added environment knobs for hook-suggested fast async commands:
+  `TASKCTL_INTERACTIVE_SPEED_PROFILE=fast` and `TASKCTL_INTERACTIVE_ASYNC=1`.
+
 ## 0.1.31 - 2026-05-18
 
 - Fixed non-`~/.claude` installs, including `~/.grok`, when they reuse the

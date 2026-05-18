@@ -43,6 +43,17 @@ class ModelPolicyTests(unittest.TestCase):
         self.assertEqual(choice.reasoning_effort, "medium")
         self.assertEqual(choice.source, "role:assetgen")
 
+    def test_fast_profile_downshifts_latency_sensitive_roles(self) -> None:
+        uiux = model_policy.select_model("general", "uiux", model_policy.FALLBACK_POLICY, speed="fast")
+        tester = model_policy.select_model("general", "tester", model_policy.FALLBACK_POLICY, speed="fast")
+
+        self.assertEqual(uiux.model, "gpt-5.4")
+        self.assertEqual(uiux.reasoning_effort, "medium")
+        self.assertEqual(uiux.source, "fast:uiux")
+        self.assertEqual(tester.model, "gpt-5.4-mini")
+        self.assertEqual(tester.reasoning_effort, "low")
+        self.assertEqual(tester.source, "fast:tester")
+
     def test_specialized_roles_have_model_policy_entries(self) -> None:
         expected = {
             "debugger": ("gpt-5.5", "xhigh"),

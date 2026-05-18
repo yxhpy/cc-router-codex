@@ -42,6 +42,24 @@ FALLBACK_POLICY: dict[str, Any] = {
     },
 }
 
+FAST_ROLE_OVERRIDES: dict[str, dict[str, str]] = {
+    "planner": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "divergent": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "requirements": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "uiux": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "prototype": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "assetgen": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "debugger": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "operator": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "security": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "docs": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "release": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "fullstack": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "tester": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+    "reviewer": {"model": "gpt-5.4", "reasoning_effort": "medium"},
+    "closer": {"model": "gpt-5.4-mini", "reasoning_effort": "low"},
+}
+
 
 @dataclass(frozen=True)
 class ModelChoice:
@@ -49,6 +67,14 @@ class ModelChoice:
     reasoning_effort: str
     source: str
     why: str = ""
+
+
+def speed_profile(value: str | None = None, env: Mapping[str, str] | None = None) -> str:
+    env = env or os.environ
+    raw = str(value or env.get("TASKCTL_SPEED_PROFILE") or env.get("TASKCTL_DEFAULT_SPEED_PROFILE") or "").strip().lower()
+    if raw in {"fast", "quick", "interactive"}:
+        return "fast"
+    return "quality"
 
 
 def policy_enabled(env: Mapping[str, str] | None = None) -> bool:
@@ -100,9 +126,23 @@ def _clean_effort(value: Any) -> str:
     return effort
 
 
-def select_model(workflow: str, role: str, policy: Mapping[str, Any] | None = None) -> ModelChoice:
+def select_model(
+    workflow: str,
+    role: str,
+    policy: Mapping[str, Any] | None = None,
+    speed: str | None = None,
+) -> ModelChoice:
     loaded = policy or load_policy()
     entry, source = _entry(loaded, workflow or "general", role)
+    profile = speed_profile(speed)
+    if profile == "fast" and role in FAST_ROLE_OVERRIDES:
+        override = FAST_ROLE_OVERRIDES[role]
+        return ModelChoice(
+            model=_clean_model(override.get("model")),
+            reasoning_effort=_clean_effort(override.get("reasoning_effort")),
+            source=f"fast:{role}",
+            why="Fast profile: lower-latency interactive worker selection.",
+        )
     return ModelChoice(
         model=_clean_model(entry.get("model")),
         reasoning_effort=_clean_effort(entry.get("reasoning_effort")),
@@ -130,10 +170,11 @@ def main() -> int:
     parser.add_argument("workflow")
     parser.add_argument("role")
     parser.add_argument("--policy")
+    parser.add_argument("--speed-profile", choices=["quality", "fast"], default=None)
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args()
 
-    choice = select_model(args.workflow, args.role, load_policy(args.policy))
+    choice = select_model(args.workflow, args.role, load_policy(args.policy), speed=args.speed_profile)
     payload = apply_env_overrides(choice)
     if args.json:
         print(json.dumps(payload, ensure_ascii=False, indent=2))

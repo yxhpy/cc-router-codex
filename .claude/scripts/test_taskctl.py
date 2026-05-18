@@ -225,6 +225,16 @@ class TaskCtlTests(unittest.TestCase):
         self.assertTrue(dry_run["model_policy"]["enabled"])
         self.assertIn("--model", dry_run["command"])
 
+    def test_run_next_fast_profile_downshifts_model_and_effort(self) -> None:
+        job_id = self.submit_job()
+        self.enqueue_step(job_id)
+
+        dry_run = json.loads(self.run_cli("run-next", str(job_id), "--dry-run", "--speed-profile", "fast"))
+
+        self.assertEqual(dry_run["model_policy"]["speed_profile"], "fast")
+        self.assertEqual(dry_run["model_policy"]["model"], "gpt-5.4")
+        self.assertEqual(dry_run["model_policy"]["reasoning_effort"], "medium")
+
     def test_worker_prompt_includes_role_boundary(self) -> None:
         job_id = self.submit_job()
         task_id = self.enqueue_step(job_id)
@@ -399,6 +409,82 @@ class TaskCtlTests(unittest.TestCase):
         with contextlib.closing(taskctl.connect(self.db)) as conn:
             row = conn.execute("SELECT kind, path FROM artifacts WHERE task_id = ?", (payload["task_id"],)).fetchone()
         self.assertEqual(dict(row), {"kind": "html", "path": "sample-page.html"})
+
+    def test_capability_async_returns_before_worker_finishes(self) -> None:
+        fake_process = mock.Mock(pid=4321)
+
+        with mock.patch.object(taskctl.subprocess, "Popen", return_value=fake_process) as popen:
+            payload = json.loads(
+                self.run_cli(
+                    "capability",
+                    "--role",
+                    "fullstack",
+                    "--title",
+                    "Create sample page",
+                    "--prompt",
+                    "Create the sample page at sample-page.html from the style_contract and record the html artifact.",
+                    "--artifact",
+                    "html:sample-page.html",
+                    "--workspace",
+                    self.workspace,
+                    "--speed-profile",
+                    "fast",
+                    "--async",
+                    "--json",
+                )
+            )
+
+        self.assertTrue(payload["async"])
+        self.assertEqual(payload["pid"], 4321)
+        self.assertEqual(payload["speed_profile"], "fast")
+        self.assertIn("async-job-", payload["async_log"])
+        command = popen.call_args.args[0]
+        self.assertIn("run-next", command)
+        self.assertIn("--speed-profile", command)
+        with contextlib.closing(taskctl.connect(self.db)) as conn:
+            task = conn.execute("SELECT status, prompt FROM tasks WHERE id = ?", (payload["task_id"],)).fetchone()
+        self.assertEqual(task["status"], "queued")
+        self.assertIn("[TASKCTL FRONTEND DESIGN SOURCE]", task["prompt"])
+        self.assertNotIn("Every color, type scale", task["prompt"])
+
+    def test_capability_html_smoke_validator_avoids_model_worker(self) -> None:
+        Path(self.workspace, "sample.html").write_text(
+            "<html><title>Smoke</title><body><p>Hello smoke</p><button>Run</button></body></html>",
+            encoding="utf-8",
+        )
+
+        with mock.patch.object(worker_runner.subprocess, "run", side_effect=AssertionError("model worker should not run")):
+            payload = json.loads(
+                self.run_cli(
+                    "capability",
+                    "--role",
+                    "tester",
+                    "--title",
+                    "Validate sample page",
+                    "--prompt",
+                    "Verify sample.html contains Hello smoke, one button, and no external URLs.",
+                    "--artifact",
+                    "test_report:.claude/artifacts/test_report.md",
+                    "--workspace",
+                    self.workspace,
+                    "--validator",
+                    "html-smoke",
+                    "--check-file",
+                    "sample.html",
+                    "--contains",
+                    "Hello smoke",
+                    "--button-count",
+                    "1",
+                    "--no-external-url",
+                    "--json",
+                )
+            )
+
+        self.assertEqual(payload["exit_code"], 0)
+        self.assertEqual(payload["validator"], "html-smoke")
+        self.assertTrue(payload["audit_complete"])
+        report = Path(self.workspace) / ".claude" / "artifacts" / "test_report.md"
+        self.assertIn("Result: PASS", report.read_text(encoding="utf-8"))
 
     def test_capability_accepts_prompt_file_from_task_plans(self) -> None:
         prompt_dir = Path(self.workspace) / ".claude" / "task-plans"

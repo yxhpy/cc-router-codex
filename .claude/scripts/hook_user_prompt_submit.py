@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -56,6 +57,21 @@ def artifact_args(artifacts: list[str]) -> str:
     return " ".join(f"--artifact {ps_quote(item)}" for item in artifacts)
 
 
+def env_enabled(name: str, default: str = "") -> bool:
+    value = os.environ.get(name, default)
+    return str(value).strip().lower() not in {"", "0", "false", "off", "none", "no"}
+
+
+def interactive_speed_args() -> str:
+    parts: list[str] = []
+    speed = str(os.environ.get("TASKCTL_INTERACTIVE_SPEED_PROFILE") or os.environ.get("TASKCTL_SPEED_PROFILE") or "").strip().lower()
+    if speed in {"fast", "quick", "interactive"}:
+        parts.append("--speed-profile fast")
+    if env_enabled("TASKCTL_INTERACTIVE_ASYNC", "0"):
+        parts.append("--async")
+    return (" ".join(parts) + " ") if parts else ""
+
+
 def suggested_command(route: llm_router.Route, prompt: str, workspace: str, route_token: str = "") -> str:
     token_arg = f"--route-token={ps_quote(route_token)} " if route_token else ""
     return (
@@ -65,6 +81,7 @@ def suggested_command(route: llm_router.Route, prompt: str, workspace: str, rout
         f"--prompt {ps_quote(route.worker_prompt)} "
         f"{artifact_args(route.artifacts)} "
         f"{token_arg}"
+        f"{interactive_speed_args()}"
         f"--workspace {ps_quote(workspace)} "
         f"--goal {ps_quote(prompt)}"
     )

@@ -19,6 +19,7 @@ import os
 import re
 import shutil
 import sqlite3
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -114,6 +115,19 @@ TASK_STATUSES = {
 }
 DEFAULT_RUN_TIMEOUT_SECONDS = 1800
 DEFAULT_STALE_AFTER_SECONDS = 900
+
+
+def speed_profile(value: str | None = None) -> str:
+    return model_policy.speed_profile(value)
+
+
+def prompt_profile(value: str | None = None, speed: str | None = None) -> str:
+    raw = str(value or os.environ.get("TASKCTL_PROMPT_PROFILE") or "").strip().lower()
+    if raw in {"compact", "short", "fast"}:
+        return "compact"
+    if speed_profile(speed) == "fast":
+        return "compact"
+    return "full"
 
 def default_workspace() -> str:
     return str(REPO_ROOT.resolve())
@@ -429,6 +443,17 @@ def attach_experience_footer(prompt: str) -> str:
     return prompt.rstrip() + experience_footer()
 
 
+def compact_experience_footer() -> str:
+    shell_label, task_id_ref = task_id_shell_reference()
+    return f"""
+
+{EXPERIENCE_FOOTER_MARKER}
+If this task produced a specific reusable lesson, record one concise candidate:
+{shell_label}: {script_command('taskctl.py')} experience-add --task-id {task_id_ref} --kind pattern --title "Short title" --summary "What was learned" --evidence "Artifact or command" --reuse "When to reuse"
+Skip this for routine implementation or validation work.
+"""
+
+
 def role_boundary_footer(role: str) -> str:
     boundary = ROLE_BOUNDARIES.get(role)
     if not boundary:
@@ -486,6 +511,21 @@ source traceability is mandatory:
 """
 
 
+def compact_frontend_design_footer() -> str:
+    design_root = display_path(CLAUDE_DIR / "design-references")
+    design_manifest = display_path(CLAUDE_DIR / "design-references" / "manifest.json")
+    return f"""
+
+{FRONTEND_DESIGN_MARKER}
+For frontend or visual work, use project design sources first. If none exist and
+role is uiux, run `{script_command('sync_design_refs.py')} --offline --quiet`,
+select concise evidence from {design_manifest} (paths relative to {design_root}),
+and record design_reference_selection/style_contract. Fullstack/tester must use
+existing project design artifacts instead of inventing untraceable styling.
+Use local/project media or local raster assetgen outputs; do not hotlink media.
+"""
+
+
 def project_context_footer() -> str:
     return f"""
 
@@ -499,6 +539,16 @@ Optional project context sources are soft inputs:
   with the task using current repository evidence.
 - Do not create CONTEXT.md or docs/adr/ unless the user explicitly requested
   project context documentation or an ADR.
+"""
+
+
+def compact_project_context_footer() -> str:
+    return f"""
+
+{PROJECT_CONTEXT_MARKER}
+If CONTEXT.md or docs/adr/ exists, read relevant entries before vocabulary,
+architecture, persistence, API, dependency, or deployment decisions. Absence is
+not a blocker. Do not create those docs unless explicitly requested.
 """
 
 
@@ -533,6 +583,15 @@ finishing unless the user explicitly asked to leave it running. Foreground
 commands such as `npm run dev`, `pnpm dev`, `yarn dev`, `bun dev`, `next dev`,
 `vite --host`, or `python -m http.server` will make the task hang and may be
 terminated by the wrapper watchdog.
+"""
+
+
+def compact_service_lifecycle_footer() -> str:
+    return f"""
+
+{SERVICE_LIFECYCLE_MARKER}
+Workers must terminate. Do not run foreground dev servers/watchers. If needed,
+start a service in the background, poll briefly, run bounded checks, then stop it.
 """
 
 
@@ -602,20 +661,29 @@ def artifact_contract_footer(required_artifacts: Iterable[str] | None) -> str:
     return "\n".join(lines) + "\n"
 
 
-def attach_task_footers(prompt: str, role: str, required_artifacts: Iterable[str] | None = None) -> str:
+def attach_task_footers(
+    prompt: str,
+    role: str,
+    required_artifacts: Iterable[str] | None = None,
+    *,
+    profile: str | None = None,
+) -> str:
+    compact = prompt_profile(profile) == "compact"
     body = prompt.rstrip()
     if ROLE_BOUNDARY_MARKER not in body:
         body += role_boundary_footer(role)
     if FRONTEND_DESIGN_MARKER not in body:
-        body += frontend_design_footer()
+        body += compact_frontend_design_footer() if compact else frontend_design_footer()
     if PROJECT_CONTEXT_MARKER not in body:
-        body += project_context_footer()
+        body += compact_project_context_footer() if compact else project_context_footer()
     if PROJECT_CONTEXT_TEMPLATE_MARKER not in body:
         body += project_context_template_footer(role)
     if SERVICE_LIFECYCLE_MARKER not in body:
-        body += service_lifecycle_footer()
+        body += compact_service_lifecycle_footer() if compact else service_lifecycle_footer()
     body += artifact_contract_footer(required_artifacts)
-    return attach_experience_footer(body)
+    if EXPERIENCE_FOOTER_MARKER in body:
+        return body
+    return body.rstrip() + (compact_experience_footer() if compact else experience_footer())
 
 
 def insert_task(
@@ -627,6 +695,7 @@ def insert_task(
     depends_on: list[int] | None = None,
     status: str = "queued",
     required_artifacts: list[str] | None = None,
+    prompt_profile_value: str | None = None,
 ) -> int:
     if role not in ROLES:
         raise SystemExit(f"ERROR: unsupported role: {role}")
@@ -642,7 +711,7 @@ def insert_task(
             job_id,
             role,
             title,
-            attach_task_footers(prompt, role, required_artifacts),
+            attach_task_footers(prompt, role, required_artifacts, profile=prompt_profile_value),
             status,
             json.dumps(depends_on or []),
             json.dumps(required_artifacts or [], ensure_ascii=False),
@@ -818,6 +887,230 @@ def ensure_no_active_step(conn: sqlite3.Connection, job_id: int) -> None:
         )
 
 
+def async_log_path(workspace: str, job_id: int, task_id: int) -> Path:
+    log_dir = Path(workspace) / "logs" / "taskctl"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    return log_dir / f"async-job-{job_id}-task-{task_id}-{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+
+def start_async_run(
+    *,
+    db: str | None,
+    job_id: int,
+    task_id: int,
+    workspace: str,
+    mode: str,
+    timeout: int,
+    speed: str | None = None,
+) -> tuple[int, str]:
+    log_path = async_log_path(workspace, job_id, task_id)
+    cmd = [
+        sys.executable,
+        str(SCRIPT_DIR / "taskctl.py"),
+        "--db",
+        str(db_path(db)),
+        "run-next",
+        str(job_id),
+        "-m",
+        mode,
+        "--timeout",
+        str(timeout),
+    ]
+    selected_speed = speed_profile(speed)
+    if selected_speed == "fast":
+        cmd.extend(["--speed-profile", "fast"])
+    env = os.environ.copy()
+    env["TASKCTL_DB"] = str(db_path(db))
+    env["TASKCTL_SPEED_PROFILE"] = selected_speed
+    flags = 0
+    if os.name == "nt":
+        flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+    with log_path.open("w", encoding="utf-8", errors="replace") as handle:
+        handle.write("=== taskctl async ===\n")
+        handle.write(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        handle.write(f"Workspace: {workspace}\n")
+        handle.write(f"Command: {json.dumps(cmd, ensure_ascii=False)}\n")
+        handle.write(f"Speed: {selected_speed}\n")
+        handle.flush()
+        process = subprocess.Popen(
+            cmd,
+            cwd=workspace,
+            env=env,
+            stdout=handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+            creationflags=flags,
+        )
+    return int(process.pid), str(log_path)
+
+
+def infer_html_check_file(prompt: str, required_artifacts: list[str]) -> str:
+    for kind, path in (artifact_spec_parts(item) for item in required_artifacts):
+        if kind.lower() == "html" and path:
+            return path
+    match = re.search(r"(?i)([A-Za-z0-9_.\\/\-]+\.html)\b", prompt)
+    return match.group(1) if match else ""
+
+
+def test_report_path(required_artifacts: list[str]) -> str:
+    for kind, path in (artifact_spec_parts(item) for item in required_artifacts):
+        if kind.lower() == "test_report" and path:
+            return path
+    return ".claude/artifacts/test_report.md"
+
+
+def html_smoke_validator_report(
+    *,
+    workspace: str,
+    prompt: str,
+    required_artifacts: list[str],
+    check_file: str,
+    contains: list[str],
+    button_count: int | None,
+    no_external_url: bool,
+) -> tuple[bool, str, str]:
+    target = check_file or infer_html_check_file(prompt, required_artifacts)
+    if not target:
+        return False, "", "ERROR: html-smoke validator requires --check-file or an .html path in the prompt/artifacts"
+    resolved = resolve_artifact_path(workspace, target).resolve(strict=False)
+    root = Path(workspace).resolve(strict=False)
+    try:
+        resolved.relative_to(root)
+    except ValueError:
+        return False, target, f"ERROR: html-smoke target must stay inside workspace: {target}"
+
+    evidence: list[str] = [f"# Smoke Test Report", "", f"Target: `{target}`", ""]
+    checks: list[tuple[str, bool, str]] = []
+    exists = resolved.is_file()
+    checks.append(("file exists", exists, str(resolved)))
+    content = resolved.read_text(encoding="utf-8", errors="replace") if exists else ""
+    for text in contains:
+        checks.append((f"contains `{text}`", text in content, ""))
+    if button_count is not None:
+        actual = len(re.findall(r"<button\b", content, flags=re.IGNORECASE))
+        checks.append((f"button count is {button_count}", actual == int(button_count), f"actual={actual}"))
+    if no_external_url:
+        actual = len(re.findall(r"https?://", content, flags=re.IGNORECASE))
+        checks.append(("no http/https URLs", actual == 0, f"url_count={actual}"))
+    passed = all(ok for _, ok, _ in checks)
+    evidence.append(f"Result: {'PASS' if passed else 'FAIL'}")
+    evidence.extend(["", "## Checks", ""])
+    for label, ok, detail in checks:
+        suffix = f" ({detail})" if detail else ""
+        evidence.append(f"- {'PASS' if ok else 'FAIL'}: {label}{suffix}")
+    evidence.extend(["", "## Deterministic Validator", "", "`taskctl html-smoke`"])
+    return passed, target, "\n".join(evidence).rstrip() + "\n"
+
+
+def execute_html_smoke_validator(
+    db: str | None,
+    job_id: int,
+    task_id: int,
+    *,
+    check_file: str,
+    contains: list[str],
+    button_count: int | None,
+    no_external_url: bool,
+) -> dict[str, Any]:
+    with closing(connect(db)) as conn:
+        job = load_job(conn, job_id)
+        task = load_task(conn, task_id)
+        if task["status"] != "queued":
+            return {
+                "task_id": task_id,
+                "role": task["role"],
+                "title": task["title"],
+                "exit_code": 1,
+                "status": task["status"],
+                "summary": f"task is not queued: {task['status']}",
+                "run_id": None,
+                "log_path": "",
+            }
+        if task["role"] != "tester":
+            raise SystemExit("ERROR: html-smoke validator is only valid for tester capabilities")
+        started = now()
+        cmd = [
+            "taskctl",
+            "validator",
+            "html-smoke",
+            "--check-file",
+            check_file or infer_html_check_file(task["prompt"], parse_json_list(task["required_artifacts_json"])),
+        ]
+        for item in contains:
+            cmd.extend(["--contains", item])
+        if button_count is not None:
+            cmd.extend(["--button-count", str(button_count)])
+        if no_external_url:
+            cmd.append("--no-external-url")
+        with conn:
+            conn.execute("UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?", (started, task_id))
+            run_cur = conn.execute(
+                """
+                INSERT INTO runs(task_id, command, log_path, exit_code, stdout_summary, started_at, finished_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (task_id, json.dumps(cmd, ensure_ascii=False), "", None, "running deterministic validator", started, ""),
+            )
+            run_id = int(run_cur.lastrowid)
+            refresh_job_status(conn, job_id)
+            emit_event(conn, "task_started", f"tester: {task['title']} [deterministic/html-smoke] run={run_id}", job_id=job_id, task_id=task_id)
+
+    required = parse_json_list(task["required_artifacts_json"])
+    passed, target, report = html_smoke_validator_report(
+        workspace=job["workspace"],
+        prompt=task["prompt"],
+        required_artifacts=required,
+        check_file=check_file,
+        contains=contains,
+        button_count=button_count,
+        no_external_url=no_external_url,
+    )
+    report_rel = test_report_path(required)
+    report_path = resolve_artifact_path(job["workspace"], report_rel)
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text(report, encoding="utf-8")
+    finished = now()
+    return_code = 0 if passed else 3
+    new_status = "done" if passed else "failed_retryable"
+    summary = f"html-smoke {'PASS' if passed else 'FAIL'} target={target} report={report_rel}"
+
+    with closing(connect(db)) as conn:
+        with conn:
+            if passed:
+                conn.execute(
+                    "INSERT INTO artifacts(task_id, path, kind, summary, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (task_id, report_rel, "test_report", "deterministic html-smoke report", finished),
+                )
+                emit_event(conn, "artifact_recorded", f"test_report: {report_rel}", job_id=job_id, task_id=task_id)
+            conn.execute(
+                "UPDATE runs SET log_path = ?, exit_code = ?, stdout_summary = ?, finished_at = ? WHERE id = ?",
+                ("", return_code, summary, finished, run_id),
+            )
+            conn.execute(
+                "UPDATE tasks SET status = ?, result_summary = ?, updated_at = ? WHERE id = ?",
+                (new_status, summary, finished, task_id),
+            )
+            emit_event(
+                conn,
+                "task_finished" if passed else "task_failed",
+                f"run={run_id} exit={return_code} {summary}",
+                job_id=job_id,
+                task_id=task_id,
+            )
+            refresh_job_status(conn, job_id)
+
+    return {
+        "task_id": task_id,
+        "role": task["role"],
+        "title": task["title"],
+        "exit_code": return_code,
+        "status": new_status,
+        "summary": summary,
+        "run_id": run_id,
+        "log_path": "",
+    }
+
+
 def run_capability(args: argparse.Namespace) -> int:
     required_artifacts = normalize_required_artifacts([*(args.required_artifact or []), *(args.artifact or [])])
     prompt_workspace = args.workspace
@@ -864,6 +1157,7 @@ def run_capability(args: argparse.Namespace) -> int:
             else:
                 job_id = int(args.job_id)
                 load_job(conn, job_id)
+            job_workspace = load_job(conn, job_id)["workspace"]
             ensure_no_active_step(conn, job_id)
             task_id = insert_task(
                 conn,
@@ -873,10 +1167,77 @@ def run_capability(args: argparse.Namespace) -> int:
                 prompt,
                 [],
                 required_artifacts=required_artifacts,
+                prompt_profile_value=prompt_profile(speed=args.speed_profile),
             )
             refresh_job_status(conn, job_id)
 
-    result = execute_task(args.db, job_id, task_id, args.mode, args.timeout)
+    if args.validator:
+        if args.async_run:
+            raise SystemExit("ERROR: --validator runs synchronously and does not support --async")
+        if args.validator == "html-smoke":
+            result = execute_html_smoke_validator(
+                args.db,
+                job_id,
+                task_id,
+                check_file=args.check_file or "",
+                contains=args.contains or [],
+                button_count=args.button_count,
+                no_external_url=bool(args.no_external_url),
+            )
+        else:
+            raise SystemExit(f"ERROR: unsupported validator: {args.validator}")
+        with closing(connect(args.db)) as conn:
+            audit_result = audit_payload(conn, job_id)
+        payload = {
+            "job_id": job_id,
+            "task_id": task_id,
+            "exit_code": result["exit_code"],
+            "status": result["status"],
+            "log_path": result["log_path"],
+            "audit_complete": audit_result["complete"],
+            "missing_artifact_kinds": audit_result["missing_artifact_kinds"],
+            "missing_artifact_files": audit_result["missing_artifact_files"],
+            "summary": result["summary"],
+            "validator": args.validator,
+            "route_token": token_check.reason,
+        }
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"CAPABILITY job={job_id} task={task_id} status={result['status']} exit={result['exit_code']}")
+            print(result["summary"])
+        return int(result["exit_code"] or 0)
+
+    if args.async_run:
+        pid, async_log = start_async_run(
+            db=args.db,
+            job_id=job_id,
+            task_id=task_id,
+            workspace=job_workspace,
+            mode=args.mode,
+            timeout=args.timeout,
+            speed=args.speed_profile,
+        )
+        payload = {
+            "job_id": job_id,
+            "task_id": task_id,
+            "status": "queued",
+            "async": True,
+            "pid": pid,
+            "async_log": async_log,
+            "speed_profile": speed_profile(args.speed_profile),
+            "route_token": token_check.reason,
+            "next": f"{script_command('taskctl.py')} status {job_id} --json",
+        }
+        if args.json:
+            print(json.dumps(payload, ensure_ascii=False, indent=2))
+        else:
+            print(f"CAPABILITY job={job_id} task={task_id} queued async pid={pid}")
+            print(f"ASYNC LOG: {async_log}")
+            print(f"STATUS: {payload['next']}")
+        return 0
+
+    result = execute_task(args.db, job_id, task_id, args.mode, args.timeout, args.speed_profile)
     with closing(connect(args.db)) as conn:
         audit_result = audit_payload(conn, job_id)
 
@@ -1227,6 +1588,7 @@ def build_worker_command(
     workflow: str,
     task: sqlite3.Row,
     mode: str,
+    speed: str | None = None,
 ) -> tuple[list[str], dict[str, Any]]:
     if task["role"] == "assetgen":
         outputs, manifest = assetgen_command_paths(task["required_artifacts_json"])
@@ -1257,12 +1619,14 @@ def build_worker_command(
         ]
     policy_payload: dict[str, Any] = {"enabled": False}
     if model_policy.policy_enabled():
-        choice = model_policy.select_model(workflow, task["role"])
+        selected_speed = speed_profile(speed)
+        choice = model_policy.select_model(workflow, task["role"], speed=selected_speed)
         resolved = model_policy.apply_env_overrides(choice, os.environ)
         policy_payload = {
             "enabled": True,
             "workflow": workflow,
             "role": task["role"],
+            "speed_profile": selected_speed,
             **resolved,
         }
         if not resolved["model_overridden_by_env"]:
@@ -1281,8 +1645,9 @@ def task_plan_payload(
     workflow: str,
     task: sqlite3.Row,
     mode: str,
+    speed: str | None = None,
 ) -> dict[str, Any]:
-    cmd, policy_payload = build_worker_command(job, workflow, task, mode)
+    cmd, policy_payload = build_worker_command(job, workflow, task, mode, speed)
     return {
         "task_id": task["id"],
         "role": task["role"],
@@ -1300,6 +1665,7 @@ def execute_task(
     task_id: int,
     mode: str,
     timeout: int,
+    speed: str | None = None,
 ) -> dict[str, Any]:
     with closing(connect(db)) as conn:
         job = load_job(conn, job_id)
@@ -1329,7 +1695,7 @@ def execute_task(
                 "run_id": None,
                 "log_path": "",
             }
-        cmd, policy_payload = build_worker_command(job, workflow, task, mode)
+        cmd, policy_payload = build_worker_command(job, workflow, task, mode, speed)
         started = now()
         with conn:
             cur = conn.execute(
@@ -1366,6 +1732,7 @@ def execute_task(
     env["TASKCTL_DB"] = str(db_path(db))
     env["TASKCTL_JOB_ID"] = str(job_id)
     env["TASKCTL_TASK_ID"] = str(task_id)
+    env["TASKCTL_SPEED_PROFILE"] = speed_profile(speed)
     worker_result = worker_runner.run_worker_command(
         cmd,
         env=env,
@@ -1438,14 +1805,14 @@ def run_next(args: argparse.Namespace) -> int:
         if args.dry_run:
             print(
                 json.dumps(
-                    task_plan_payload(job, workflow, task, args.mode),
+                    task_plan_payload(job, workflow, task, args.mode, args.speed_profile),
                     ensure_ascii=False,
                     indent=2,
                 )
             )
             return 0
 
-    result = execute_task(args.db, args.job_id, int(task["id"]), args.mode, args.timeout)
+    result = execute_task(args.db, args.job_id, int(task["id"]), args.mode, args.timeout, args.speed_profile)
     print(result["summary"])
     return int(result["exit_code"] or 0)
 
@@ -2652,6 +3019,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--required-artifact", action="append", help="required artifact kind or kind:path")
     p.add_argument("-m", "--mode", default="workspace", choices=["sandbox", "workspace", "readonly"])
     p.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT_SECONDS)
+    p.add_argument("--speed-profile", choices=["quality", "fast"], default=None)
+    p.add_argument("--async", dest="async_run", action="store_true", help="return immediately after queuing the capability and start worker in the background")
+    p.add_argument("--validator", choices=["html-smoke"], help="run a deterministic validator instead of a model worker")
+    p.add_argument("--check-file", help="validator target file path inside the workspace")
+    p.add_argument("--contains", action="append", help="validator text that must be present; repeatable")
+    p.add_argument("--button-count", type=int, help="validator expected HTML button element count")
+    p.add_argument("--no-external-url", action="store_true", help="validator requires zero http:// or https:// URLs")
     p.add_argument("--route-token", help="short-lived token proving this capability matches recent LLM router output")
     p.add_argument("--json", action="store_true")
     p.set_defaults(func=run_capability)
@@ -2667,6 +3041,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("job_id", type=int)
     p.add_argument("-m", "--mode", default="workspace", choices=["sandbox", "workspace", "readonly"])
     p.add_argument("--timeout", type=int, default=DEFAULT_RUN_TIMEOUT_SECONDS)
+    p.add_argument("--speed-profile", choices=["quality", "fast"], default=None)
     p.add_argument("--dry-run", action="store_true")
     p.set_defaults(func=run_next)
 

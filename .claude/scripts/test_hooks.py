@@ -495,6 +495,22 @@ class HookTests(unittest.TestCase):
         self.assertNotIn("filter-input --role", context)
         self.assertNotIn("enqueue <job_id>", context)
 
+    def test_user_prompt_can_suggest_fast_async_capability(self) -> None:
+        code, output = run_hook(
+            PROMPT_HOOK,
+            {"prompt": "Build a fast smoke page."},
+            {
+                **router_mock(artifacts=["html:sample-page.html"]),
+                "TASKCTL_INTERACTIVE_SPEED_PROFILE": "fast",
+                "TASKCTL_INTERACTIVE_ASYNC": "1",
+            },
+        )
+
+        self.assertEqual(code, 0)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("--speed-profile fast", context)
+        self.assertIn("--async", context)
+
     def test_user_prompt_ignores_background_task_notifications(self) -> None:
         notification = """<task-notification>
 <task-id>abc123</task-id>
