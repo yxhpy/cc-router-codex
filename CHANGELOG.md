@@ -6,6 +6,14 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.39 - 2026-05-18
+
+- Added asset generation timing telemetry to local manifests, including Codex
+  subprocess time, prompt-context time, verification time, and the gap between
+  the last output write and Codex exit for bottom-up latency diagnosis.
+- Recorded the assetgen profiling method in the interactive speed validation
+  checklist so future speed work must validate with `assetgen_exec.py` timings.
+
 ## 0.1.38 - 2026-05-18
 
 - Fixed asset-role inference so footer text and words such as `prompt` no

@@ -68,6 +68,19 @@ def now_stamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def stamp_from_epoch(epoch_seconds: float) -> str:
+    return (
+        datetime.fromtimestamp(epoch_seconds, timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z")
+    )
+
+
+def elapsed_seconds(started: float) -> float:
+    return round(time.monotonic() - started, 3)
+
+
 def _parse_int(value: str | None) -> int | None:
     if value is None or not value.strip():
         return None
@@ -202,6 +215,23 @@ def all_outputs_valid(images: Sequence[OutputImage]) -> tuple[bool, str]:
     except AssetgenError as exc:
         return False, str(exc)
     return True, ""
+
+
+def output_write_stats(images: Sequence[OutputImage], *, codex_finished_wall: float) -> dict[str, Any]:
+    mtimes: list[float] = []
+    for image in images:
+        try:
+            if image.path.is_file():
+                mtimes.append(image.path.stat().st_mtime)
+        except OSError:
+            continue
+    if not mtimes:
+        return {}
+    last_mtime = max(mtimes)
+    return {
+        "last_output_write_at": stamp_from_epoch(last_mtime),
+        "last_output_write_to_codex_exit_seconds": round(max(0.0, codex_finished_wall - last_mtime), 3),
+    }
 
 
 def build_output_schema(count: int) -> dict[str, Any]:
@@ -465,6 +495,7 @@ def write_manifest(
     size: str,
     style: str,
     prompt_template_mcp: Mapping[str, Any] | None = None,
+    timings: Mapping[str, Any] | None = None,
 ) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -484,6 +515,8 @@ def write_manifest(
             for image in images
         ],
     }
+    if timings is not None:
+        payload["timings"] = dict(timings)
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -508,10 +541,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    started = time.monotonic()
     parser = build_parser()
     args = parser.parse_args(argv)
     progress = AssetgenProgress.from_env()
+    timings: dict[str, Any] = {"started_at": now_stamp()}
     try:
+        setup_started = time.monotonic()
         workspace = resolve_workspace(args.workspace)
         images = output_images(workspace, args.output or [])
         manifest = (
@@ -519,11 +555,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             if args.manifest
             else None
         )
+        timings["setup_seconds"] = elapsed_seconds(setup_started)
         target_text = ", ".join(image.path.relative_to(workspace).as_posix() for image in images)
         progress.emit(f"requested {len(images)} raster image(s): {target_text}")
         if args.reuse_existing:
+            reuse_started = time.monotonic()
             valid, reason = all_outputs_valid(images)
+            timings["reuse_existing_verify_seconds"] = elapsed_seconds(reuse_started)
             if valid:
+                timings["mode"] = "reuse_existing"
+                timings["total_seconds"] = elapsed_seconds(started)
                 if manifest:
                     write_manifest(
                         manifest,
@@ -533,6 +574,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                         size=args.size,
                         style=args.style,
                         prompt_template_mcp={"mode": "reuse_existing", "skipped": True},
+                        timings=timings,
                     )
                     progress.emit(f"wrote manifest: {manifest.relative_to(workspace).as_posix()}")
                 progress.emit(f"assetgen reused existing outputs: {len(images)} image(s)")
@@ -543,6 +585,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     print(f"MANIFEST: {manifest.relative_to(workspace).as_posix()}")
                 return 0
             progress.emit(f"reuse-existing skipped: {reason}")
+        prompt_context_started = time.monotonic()
         if args.fast or args.prompt_template_top <= 0:
             progress.emit("prompt-template MCP skipped for fast assetgen")
             prompt_context = {
@@ -558,20 +601,24 @@ def main(argv: Sequence[str] | None = None) -> int:
                 style=args.style,
                 top=max(1, args.prompt_template_top),
             )
+        timings["prompt_context_seconds"] = elapsed_seconds(prompt_context_started)
         prompt_metadata = prompt_context.get("metadata") if isinstance(prompt_context, Mapping) else {}
         prompt_status = prompt_metadata.get("status") if isinstance(prompt_metadata, Mapping) else {}
         prompt_version = prompt_status.get("version") if isinstance(prompt_status, Mapping) else {}
         if isinstance(prompt_version, Mapping) and prompt_version.get("warning"):
             print(f"WARNING: {prompt_version['warning']}", file=sys.stderr)
             progress.emit(f"prompt-template warning: {prompt_version['warning']}")
+        output_prepare_started = time.monotonic()
         for image in images:
             image.path.parent.mkdir(parents=True, exist_ok=True)
             if image.path.exists():
                 image.path.unlink()
+        timings["output_prepare_seconds"] = elapsed_seconds(output_prepare_started)
 
         codex_bin = args.codex_bin.strip() or codex_exec._find_codex()
         output_dirs = sorted({image.path.parent for image in images}, key=lambda item: str(item))
         with tempfile.TemporaryDirectory(prefix=".assetgen_", dir=str(workspace)) as tmp:
+            codex_prepare_started = time.monotonic()
             tmp_path = Path(tmp)
             schema_path = tmp_path / "assetgen_schema.json"
             message_path = tmp_path / "assetgen_last_message.json"
@@ -595,7 +642,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 reasoning_effort=args.reasoning_effort,
                 sandbox=args.sandbox,
             )
+            timings["codex_prepare_seconds"] = elapsed_seconds(codex_prepare_started)
             progress.emit(f"codex generation started for {len(images)} image(s); timeout={args.timeout}s")
+            codex_started = time.monotonic()
+            codex_started_wall = time.time()
             result = run_codex(
                 command,
                 prompt,
@@ -604,15 +654,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                 heartbeat_seconds=progress_heartbeat_seconds(),
                 heartbeat_message=f"codex generation still running for {len(images)} image(s)",
             )
-            progress.emit(f"codex generation exited {result.returncode}")
+            codex_finished_wall = time.time()
+            timings["codex_seconds"] = elapsed_seconds(codex_started)
+            timings["codex_started_at"] = stamp_from_epoch(codex_started_wall)
+            timings["codex_finished_at"] = stamp_from_epoch(codex_finished_wall)
+            timings.update(output_write_stats(images, codex_finished_wall=codex_finished_wall))
+            progress.emit(f"codex generation exited {result.returncode}; seconds={timings['codex_seconds']}")
+            final_message_started = time.monotonic()
             final_text = message_path.read_text(encoding="utf-8", errors="replace") if message_path.exists() else result.stdout
+            timings["final_message_seconds"] = elapsed_seconds(final_message_started)
             if result.returncode != 0:
                 raise AssetgenError(
                     "Codex image generation failed with exit %s\nstdout:\n%s\nstderr:\n%s"
                     % (result.returncode, result.stdout.strip(), result.stderr.strip())
                 )
+            verify_started = time.monotonic()
             verify_payload(parse_json_object(final_text), images, workspace, progress=progress)
+            timings["verify_seconds"] = elapsed_seconds(verify_started)
         if manifest:
+            timings["total_before_manifest_seconds"] = elapsed_seconds(started)
             write_manifest(
                 manifest,
                 workspace,
@@ -621,6 +681,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 size=args.size,
                 style=args.style,
                 prompt_template_mcp=prompt_metadata if isinstance(prompt_metadata, Mapping) else {},
+                timings=timings,
             )
             progress.emit(f"wrote manifest: {manifest.relative_to(workspace).as_posix()}")
         progress.emit(f"assetgen complete: {len(images)} image(s)")

@@ -95,3 +95,27 @@ For taskctl submit/status/audit turns, use `claude_submit.cmd`. For turns that
 need lightweight controller file access, use `claude_fast.cmd`. Use the default
 `claude` command only when unrelated MCP tools, slash commands, or full Claude
 Code tooling are intentionally needed.
+
+## Assetgen Latency Validation
+
+Use `assetgen_exec.py` for every real image-generation speed test. Do not use
+Codex built-in image tools directly when validating this framework path.
+
+Run a bounded profiling image through the installed or source assetgen wrapper:
+
+```powershell
+& "C:\Users\Administrator\AppData\Local\Programs\Python\Python312\python.exe" ".claude\scripts\assetgen_exec.py" --workspace "C:\Users\Administrator\Desktop\demo04" --prompt "Create one simple profiling image." --output "assets/generated/profile.png" --manifest "assets/generated/profile-manifest.json" --asset-role web --size 512x512 --model gpt-5.4-mini --reasoning-effort low --fast --timeout 900
+```
+
+Then inspect `timings` in the manifest:
+
+- `prompt_context_seconds` should be near zero in `--fast` mode.
+- `codex_seconds` is the real Codex subprocess and image-backend latency.
+- `last_output_write_to_codex_exit_seconds` shows Codex post-image finalization
+  time after the requested raster file already exists.
+- `verify_seconds` should be near zero; if it is not, local file IO is the
+  bottleneck.
+
+Treat wall-clock time alone as insufficient. A valid diagnosis must separate
+wrapper overhead, Codex startup/model overhead, image backend generation, and
+post-image finalization using manifest timings.

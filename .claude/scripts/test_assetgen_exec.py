@@ -115,6 +115,8 @@ class AssetgenExecTests(unittest.TestCase):
             self.assertEqual(manifest["backend"], "codex")
             self.assertEqual(manifest["images"][0]["path"], output_rel)
             self.assertEqual(manifest["prompt_template_mcp"]["template_ids"], ["template:hero"])
+            self.assertIn("codex_seconds", manifest["timings"])
+            self.assertIn("verify_seconds", manifest["timings"])
             with closing(sqlite3.connect(task_db)) as conn:
                 rows = conn.execute("SELECT type, message, job_id, task_id FROM events ORDER BY id").fetchall()
                 updated_at = conn.execute("SELECT updated_at FROM tasks WHERE id = 7").fetchone()[0]
@@ -216,6 +218,8 @@ class AssetgenExecTests(unittest.TestCase):
             manifest = json.loads((workspace / manifest_rel).read_text(encoding="utf-8"))
             self.assertEqual(manifest["images"][0]["path"], output_rel)
             self.assertEqual(manifest["prompt_template_mcp"]["mode"], "reuse_existing")
+            self.assertEqual(manifest["timings"]["mode"], "reuse_existing")
+            self.assertIn("reuse_existing_verify_seconds", manifest["timings"])
 
 
 if __name__ == "__main__":
