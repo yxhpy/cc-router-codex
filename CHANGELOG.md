@@ -6,6 +6,13 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.36 - 2026-05-18
+
+- Added `claude_submit.cmd` / `claude_submit.ps1`, a stricter Bash-only Claude
+  Code launcher for fastest taskctl submit/status/audit interaction turns.
+- Kept `claude_fast.*` as the balanced small-tool launcher when prompt-file or
+  lightweight controller file access is needed.
+
 ## 0.1.35 - 2026-05-18
 
 - Added installed `claude_fast.cmd` / `claude_fast.ps1` launchers for
