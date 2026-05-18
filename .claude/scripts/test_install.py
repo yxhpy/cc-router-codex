@@ -30,6 +30,14 @@ def make_source(root: Path) -> Path:
     (source / ".claude" / "scripts" / "hook_intercept_create.py").write_text("print('pre')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "hook_user_prompt_submit.py").write_text("print('prompt')\n", encoding="utf-8")
     (source / ".claude" / "scripts" / "run_python.cmd").write_text("@echo off\npython %*\n", encoding="utf-8")
+    (source / ".claude" / "scripts" / "claude_fast.cmd").write_text(
+        'claude --tools "Bash,Read,Write,Edit,Grep,Glob" --strict-mcp-config --effort low %*\n',
+        encoding="utf-8",
+    )
+    (source / ".claude" / "scripts" / "claude_fast.ps1").write_text(
+        '& claude --tools "Bash,Read,Write,Edit,Grep,Glob" --strict-mcp-config --effort low @args\n',
+        encoding="utf-8",
+    )
     (source / ".claude" / "task-plans" / "route-cache.json").write_text("{}", encoding="utf-8")
     (source / ".claude" / "artifacts" / "old.txt").write_text("runtime", encoding="utf-8")
     (source / ".claude" / ".prompt-searcher").mkdir()
@@ -110,6 +118,11 @@ class InstallTests(unittest.TestCase):
 
             self.assertEqual(result.target, target.resolve())
             self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
+            self.assertTrue((target / ".claude" / "scripts" / "claude_fast.cmd").exists())
+            fast_cmd = (target / ".claude" / "scripts" / "claude_fast.cmd").read_text(encoding="utf-8")
+            self.assertIn("--tools", fast_cmd)
+            self.assertIn("--strict-mcp-config", fast_cmd)
+            self.assertIn("--effort low", fast_cmd)
             self.assertTrue((target / "CLAUDE.md").exists())
             self.assertEqual((target / ".claude" / "CLAUDE.md").read_text(encoding="utf-8"), "# Rules\n")
             self.assertFalse((target / "CONTEXT.md").exists())

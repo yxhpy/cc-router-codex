@@ -6,6 +6,13 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.35 - 2026-05-18
+
+- Added installed `claude_fast.cmd` / `claude_fast.ps1` launchers for
+  lower-latency Claude Code sessions. They keep the configured default model
+  while limiting tools, disabling slash-command loading, ignoring unrelated MCP
+  configs, and using low effort for fast submission turns.
+
 ## 0.1.34 - 2026-05-18
 
 - Compacted the auto-loaded `CLAUDE.md` control rules and moved expanded detail

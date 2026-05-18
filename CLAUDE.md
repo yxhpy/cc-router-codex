@@ -38,6 +38,11 @@ Use command discovery instead of guessing syntax:
 <installed-taskctl-command> doctor --workspace "<project>"
 ```
 
+For lower-latency interactive sessions on Windows, launch through the installed
+`.claude/scripts/claude_fast.cmd`. It keeps the configured default model, limits
+Claude Code to the tools needed to call taskctl, disables slash-command loading,
+and ignores unrelated MCP configs.
+
 For production completion, rely on the capability audit result and then record
 focus completion or exhaustion with the installed `focus_guard.py` command when
 the Stop hook has an active goal.
