@@ -29,7 +29,7 @@ ROLE_MARKDOWN_CHECKS: dict[str, tuple[Check, ...]] = {
         ("risks", ("risks", "risk", "tradeoff", "风险")),
     ),
     "uiux": (
-        ("design source", ("design source", "reference", "inspiration", "设计来源")),
+        ("design source", ("design source", "source basis", "reference", "inspiration", "设计来源")),
         ("style contract", ("style contract", "typography", "spacing", "color", "样式")),
         ("assets", ("assets", "image", "media", "素材")),
         ("states", ("states", "empty state", "loading", "error state", "状态")),

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import tempfile
 import unittest
@@ -34,6 +35,50 @@ class ProjectInitTests(unittest.TestCase):
             env_text = (workspace / ".claude" / ".env").read_text(encoding="utf-8")
             self.assertIn("TASKCTL_PROJECT_RUNTIME=1", env_text)
             self.assertIn("TASKCTL_GLOBAL_CONTROL_PLANE=", env_text)
+
+    def test_auto_init_removes_stale_project_level_hooks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "stale-project"
+            claude_dir = workspace / ".claude"
+            claude_dir.mkdir(parents=True)
+            (claude_dir / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "permissions": {"allow": ["Bash(existing *)"]},
+                        "hooks": {
+                            "UserPromptSubmit": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "python .claude/scripts/hook_user_prompt_submit.py",
+                                        }
+                                    ]
+                                }
+                            ],
+                            "Stop": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "python custom_stop.py",
+                                        }
+                                    ]
+                                }
+                            ],
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            project_init.ensure_project_initialized(workspace, source="test")
+
+            settings = json.loads((claude_dir / "settings.json").read_text(encoding="utf-8"))
+            self.assertEqual(settings["permissions"]["allow"], ["Bash(existing *)"])
+            self.assertNotIn("UserPromptSubmit", settings["hooks"])
+            self.assertEqual(settings["hooks"]["Stop"][0]["hooks"][0]["command"], "python custom_stop.py")
+            self.assertTrue(list(claude_dir.glob("settings.stale-hooks-*.bak")))
 
     def test_auto_init_preserves_full_project_installs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

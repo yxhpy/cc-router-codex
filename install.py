@@ -27,6 +27,12 @@ SOURCE_ROOT = Path(__file__).resolve().parent
 RUNTIME_DIR_NAMES = {"__pycache__", "artifacts", "task-plans", "logs", ".prompt-searcher"}
 RUNTIME_FILE_NAMES = {".env", "settings.local.json", "ALLOW_CONTROL_PLANE_WRITES"}
 RUNTIME_SUFFIXES = {".pyc", ".pyo", ".sqlite", ".sqlite3", ".db", ".log", ".tmp", ".bak"}
+CONTROL_PLANE_HOOK_SCRIPTS = (
+    "hook_intercept_create.py",
+    "hook_user_prompt_submit.py",
+    "hook_session_start.py",
+    "hook_stop_focus.py",
+)
 DEFAULT_BASH_ALLOW_RULES = (
     "Bash(python *)",
     "Bash(python3 *)",
@@ -121,6 +127,13 @@ def conflicts_for(target: Path) -> list[Path]:
         if path.exists():
             conflicts.append(path)
     return conflicts
+
+
+def is_user_level_target(target: Path) -> bool:
+    try:
+        return target.expanduser().resolve() == Path.home().resolve()
+    except OSError:
+        return False
 
 
 def confirm_overwrite(
@@ -344,6 +357,98 @@ def rewrite_settings(settings_path: Path, detection: Detection) -> None:
     settings_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def load_json_object(path: Path) -> dict[str, object]:
+    if not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def hook_entry_uses_control_plane(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    hooks = entry.get("hooks")
+    if not isinstance(hooks, list):
+        return False
+    for hook in hooks:
+        if not isinstance(hook, dict):
+            continue
+        command = str(hook.get("command") or "")
+        if any(script_name in command for script_name in CONTROL_PLANE_HOOK_SCRIPTS):
+            return True
+    return False
+
+
+def merge_settings_payload(
+    *,
+    existing: dict[str, object],
+    base: dict[str, object],
+) -> dict[str, object]:
+    merged = dict(existing)
+
+    base_plugins = base.get("enabledPlugins")
+    if isinstance(base_plugins, dict):
+        existing_plugins = merged.get("enabledPlugins")
+        plugins = dict(existing_plugins) if isinstance(existing_plugins, dict) else {}
+        plugins.update(base_plugins)
+        merged["enabledPlugins"] = plugins
+
+    base_permissions = base.get("permissions")
+    if "permissions" not in merged and isinstance(base_permissions, dict):
+        merged["permissions"] = base_permissions
+
+    base_hooks = base.get("hooks")
+    if isinstance(base_hooks, dict):
+        existing_hooks = merged.get("hooks")
+        hooks = dict(existing_hooks) if isinstance(existing_hooks, dict) else {}
+        for event_name, event_entries in base_hooks.items():
+            if not isinstance(event_entries, list):
+                continue
+            current_entries = hooks.get(event_name)
+            kept_entries = [
+                entry
+                for entry in (current_entries if isinstance(current_entries, list) else [])
+                if not hook_entry_uses_control_plane(entry)
+            ]
+            hooks[event_name] = list(event_entries) + kept_entries
+        merged["hooks"] = hooks
+
+    for key, value in base.items():
+        if key not in merged:
+            merged[key] = value
+    return merged
+
+
+def copy_claude_tree(source_claude: Path, target_claude: Path, *, merge: bool) -> None:
+    if not merge:
+        shutil.copytree(source_claude, target_claude, ignore=copy_ignore)
+        return
+
+    target_claude.mkdir(parents=True, exist_ok=True)
+    for child in source_claude.iterdir():
+        if should_exclude(child.name, child.is_dir()):
+            continue
+        destination = target_claude / child.name
+        if child.name == "settings.json":
+            continue
+        if child.is_dir():
+            shutil.copytree(child, destination, dirs_exist_ok=True, ignore=copy_ignore)
+        else:
+            shutil.copy2(child, destination)
+
+
+def install_settings(source_settings: Path, target_settings: Path, *, merge: bool) -> None:
+    if not merge:
+        return
+    base = load_json_object(source_settings)
+    existing = load_json_object(target_settings)
+    merged = merge_settings_payload(existing=existing, base=base)
+    target_settings.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
 def install_control_plane(
     *,
     source_root: Path = SOURCE_ROOT,
@@ -368,10 +473,13 @@ def install_control_plane(
     if conflicts and not yes and not confirm_overwrite(conflicts, input_func=input_func, output_func=output_func):
         raise SystemExit("ABORTED: existing .claude, CLAUDE.md, VERSION, or VERSIONING.md was not overwritten")
 
-    for path in conflicts:
-        safe_remove(path, target)
+    merge_user_claude = is_user_level_target(target)
+    if not merge_user_claude:
+        for path in conflicts:
+            safe_remove(path, target)
 
-    shutil.copytree(source_claude, target / ".claude", ignore=copy_ignore)
+    copy_claude_tree(source_claude, target / ".claude", merge=merge_user_claude)
+    install_settings(source_claude / "settings.json", target / ".claude" / "settings.json", merge=merge_user_claude)
     shutil.copy2(source_claude_md, target / "CLAUDE.md")
     if source_version.is_file():
         shutil.copy2(source_version, target / "VERSION")

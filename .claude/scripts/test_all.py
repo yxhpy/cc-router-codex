@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 from pathlib import Path
 import subprocess
 import sys
@@ -20,6 +21,10 @@ def run(args: list[str], label: str, quiet: bool = False) -> None:
     result = subprocess.run(args, cwd=str(ROOT), text=True, stdout=stdout)
     if result.returncode != 0:
         raise SystemExit(result.returncode)
+
+
+def can_run_skill_validator() -> bool:
+    return importlib.util.find_spec("yaml") is not None
 
 
 def main() -> int:
@@ -65,11 +70,13 @@ def main() -> int:
     checker = source_checker if source_checker.is_file() else installed_checker
     run([py, str(checker)], "skill_manifest_check.py")
 
-    if VALIDATOR.exists():
+    if VALIDATOR.exists() and can_run_skill_validator():
         run([py, str(VALIDATOR), str(ROOT / ".claude" / "skills" / "learned-experience")], "learned-experience skill")
         plugin_skill = ROOT / ".claude" / "plugins" / "task-decompose" / "skills" / "learned-experience"
         if plugin_skill.exists():
             run([py, str(VALIDATOR), str(plugin_skill)], "plugin learned-experience skill")
+    elif VALIDATOR.exists():
+        print("== learned-experience skill (skipped: missing optional yaml dependency)", flush=True)
 
     print("ALL CHECKS PASSED")
     return 0

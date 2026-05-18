@@ -14,6 +14,12 @@ from project_paths import CLAUDE_DIR, REPO_ROOT, normalize_external_path, parse_
 
 
 PROJECT_MARKER = "cc-router-project.json"
+STALE_HOOK_SCRIPT_NAMES = (
+    "hook_intercept_create.py",
+    "hook_user_prompt_submit.py",
+    "hook_session_start.py",
+    "hook_stop_focus.py",
+)
 RUNTIME_GITIGNORE = """# cc-router-codex project runtime
 .env
 taskctl.sqlite3*
@@ -44,6 +50,69 @@ def resolve_workspace(value: str | Path | None) -> Path:
 
 def is_full_install(workspace: Path) -> bool:
     return (workspace / ".claude" / "scripts" / "taskctl.py").is_file()
+
+
+def _hook_entry_references_stale_project_script(entry: object) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    hooks = entry.get("hooks")
+    if not isinstance(hooks, list):
+        return False
+    for hook in hooks:
+        if not isinstance(hook, dict):
+            continue
+        command = str(hook.get("command") or "").replace("\\", "/")
+        if ".claude/scripts/" in command and any(name in command for name in STALE_HOOK_SCRIPT_NAMES):
+            return True
+    return False
+
+
+def sanitize_stale_project_settings(claude_dir: Path) -> bool:
+    """Remove stale project-level cc-router hooks from lightweight runtimes.
+
+    Older project installs may leave `.claude/settings.json` pointing at
+    project-local hook scripts. Global installs intentionally do not copy those
+    scripts into each workspace, so those stale hooks break future Claude
+    sessions before the global hooks can route work.
+    """
+
+    settings_path = claude_dir / "settings.json"
+    if not settings_path.exists() or (claude_dir / "scripts" / "taskctl.py").exists():
+        return False
+    try:
+        payload = json.loads(settings_path.read_text(encoding="utf-8", errors="replace"))
+    except json.JSONDecodeError:
+        return False
+    if not isinstance(payload, dict):
+        return False
+
+    hooks = payload.get("hooks")
+    if not isinstance(hooks, dict):
+        return False
+
+    changed = False
+    sanitized_hooks: dict[str, object] = {}
+    for event_name, entries in hooks.items():
+        if not isinstance(entries, list):
+            sanitized_hooks[event_name] = entries
+            continue
+        kept = [entry for entry in entries if not _hook_entry_references_stale_project_script(entry)]
+        if len(kept) != len(entries):
+            changed = True
+        if kept:
+            sanitized_hooks[event_name] = kept
+
+    if not changed:
+        return False
+
+    backup_path = settings_path.with_name(f"settings.stale-hooks-{utc_now().replace(':', '').replace('-', '')}.bak")
+    settings_path.replace(backup_path)
+    if sanitized_hooks:
+        payload["hooks"] = sanitized_hooks
+    else:
+        payload.pop("hooks", None)
+    settings_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return True
 
 
 def runtime_for(workspace: str | Path | None) -> ProjectRuntime:
@@ -119,6 +188,7 @@ def ensure_project_initialized(workspace: str | Path | None, *, source: str = "a
         raise OSError(f"workspace is not a directory: {runtime.workspace}")
     runtime.workspace.mkdir(parents=True, exist_ok=True)
     runtime.claude_dir.mkdir(parents=True, exist_ok=True)
+    sanitize_stale_project_settings(runtime.claude_dir)
     (runtime.claude_dir / "artifacts").mkdir(exist_ok=True)
     (runtime.claude_dir / "task-plans").mkdir(exist_ok=True)
 

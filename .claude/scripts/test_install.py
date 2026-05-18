@@ -246,6 +246,63 @@ class InstallTests(unittest.TestCase):
             self.assertEqual((target / "VERSION").read_text(encoding="utf-8"), "0.1.0\n")
             self.assertEqual((target / "VERSIONING.md").read_text(encoding="utf-8"), "# Versioning\n")
 
+    def test_user_level_install_merges_existing_claude_state_and_settings(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = make_source(root)
+            target = root / "home"
+            (target / ".claude" / "cache").mkdir(parents=True)
+            (target / ".claude" / "sessions").mkdir()
+            (target / ".claude" / "history.jsonl").write_text("{}\n", encoding="utf-8")
+            (target / ".claude" / "settings.json").write_text(
+                json.dumps(
+                    {
+                        "$schema": "https://json.schemastore.org/claude-code-settings.json",
+                        "env": {"ANTHROPIC_MODEL": "configured-model"},
+                        "permissions": {"allow": ["Bash(existing *)"], "deny": ["Read(secret)"]},
+                        "hooks": {
+                            "Stop": [
+                                {
+                                    "hooks": [
+                                        {
+                                            "type": "command",
+                                            "command": "python custom_stop.py",
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
+            detection = installer.Detection("windows", "C:/Python/python.exe", "C:/npm/codex.cmd")
+
+            with (
+                mock.patch.object(installer, "detect_system", return_value=detection),
+                mock.patch.object(installer, "is_user_level_target", return_value=True),
+            ):
+                installer.install_control_plane(source_root=source, target=target, yes=True)
+
+            self.assertTrue((target / ".claude" / "cache").is_dir())
+            self.assertTrue((target / ".claude" / "sessions").is_dir())
+            self.assertEqual((target / ".claude" / "history.jsonl").read_text(encoding="utf-8"), "{}\n")
+            self.assertTrue((target / ".claude" / "scripts" / "hook_session_start.py").exists())
+
+            settings = json.loads((target / ".claude" / "settings.json").read_text(encoding="utf-8"))
+            self.assertEqual(settings["env"]["ANTHROPIC_MODEL"], "configured-model")
+            self.assertEqual(settings["permissions"]["defaultMode"], "bypassPermissions")
+            self.assertIn("Bash(existing *)", settings["permissions"]["allow"])
+            self.assertIn("Bash(C:/Python/python.exe *)", settings["permissions"]["allow"])
+            self.assertIn("Read(secret)", settings["permissions"]["deny"])
+            stop_commands = [
+                hook["command"]
+                for entry in settings["hooks"]["Stop"]
+                for hook in entry["hooks"]
+            ]
+            self.assertTrue(any("hook_stop_focus.py" in command for command in stop_commands))
+            self.assertIn("python custom_stop.py", stop_commands)
+
     def test_refuses_to_install_over_source_repository(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             source = make_source(Path(tmp))

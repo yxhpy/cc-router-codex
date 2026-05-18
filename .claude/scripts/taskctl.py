@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 from contextlib import closing
+import glob
 import json
 import os
 import re
@@ -1116,19 +1117,31 @@ def task_artifact_issues(
             if not matching:
                 issues.append(f"missing artifact path for kind {kind}: {expected_path}")
                 continue
-            if not any(resolve_artifact_path(job["workspace"], row["path"]).exists() for row in matching):
+            if not any(artifact_path_exists(job["workspace"], row["path"]) for row in matching):
                 issues.append(f"missing artifact file for kind {kind}: {expected_path}")
             continue
-        if not any(resolve_artifact_path(job["workspace"], row["path"]).exists() for row in rows):
+        if not any(artifact_path_exists(job["workspace"], row["path"]) for row in rows):
             issues.append(f"missing artifact file for kind: {kind}")
     return issues
+
+
+def artifact_path_exists(workspace: str, path: str) -> bool:
+    resolved = resolve_artifact_path(workspace, path)
+    if resolved.exists():
+        return True
+    normalized = str(path or "").replace("\\", "/")
+    if not any(token in normalized for token in ("*", "?", "[")):
+        return False
+    root = Path(workspace)
+    pattern = str(resolved if resolved.is_absolute() else root / normalized)
+    return any(Path(match).exists() for match in glob.glob(pattern))
 
 
 def auto_record_expected_artifacts(conn: sqlite3.Connection, job: sqlite3.Row, task: sqlite3.Row) -> None:
     for kind, expected_path in artifact_specs_from_json(task["required_artifacts_json"]):
         if not expected_path:
             continue
-        if not resolve_artifact_path(job["workspace"], expected_path).exists():
+        if not artifact_path_exists(job["workspace"], expected_path):
             continue
         exists = conn.execute(
             """
@@ -2145,7 +2158,7 @@ def audit_payload(conn: sqlite3.Connection, job_id: int, *, include_quality: boo
                 if not candidates:
                     missing_artifact_kinds.append(f"T{task['id']}:{kind}:{expected_path}")
                     continue
-            if not any(resolve_artifact_path(job["workspace"], row["path"]).exists() for row in candidates):
+            if not any(artifact_path_exists(job["workspace"], row["path"]) for row in candidates):
                 path_value = expected_path or candidates[0]["path"]
                 missing_artifact_files.append(
                     {

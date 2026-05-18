@@ -6,6 +6,24 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.30 - 2026-05-18
+
+- Changed user-level installs to merge the control plane into `~/.claude`
+  instead of replacing the whole directory, preserving existing Claude Code
+  settings, sessions, projects, cache, and history while still updating hooks,
+  scripts, policies, skills, and release files.
+- Added stale project-hook cleanup for global installs: lightweight project
+  auto-init now backs up project `.claude/settings.json` files that still point
+  at missing project-local cc-router hook scripts and removes those stale hook
+  entries so global hooks can route the session.
+- Fixed task artifact auditing for recorded wildcard paths such as
+  `src/demo04/*`, allowing audits to pass when the wildcard matches existing
+  files.
+- Relaxed UI/UX Markdown quality checks to accept `Source Basis` as design
+  source evidence.
+- Added regression coverage for user-level settings merge, stale hook cleanup,
+  and wildcard artifact audits.
+
 ## 0.1.29 - 2026-05-17
 
 - Changed the Codex foreground server guard to advisory mode by default: it now

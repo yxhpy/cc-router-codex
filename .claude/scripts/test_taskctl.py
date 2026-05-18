@@ -568,6 +568,29 @@ class TaskCtlTests(unittest.TestCase):
         self.assertTrue(audit["complete"])
         self.assertEqual(audit["workflow"], taskctl.ATOMIC_WORKFLOW)
 
+    def test_audit_accepts_recorded_wildcard_artifact_when_files_match(self) -> None:
+        job_id = self.submit_job()
+        task_id = self.enqueue_step(job_id, artifact="source:src/demo04/*")
+        source_dir = Path(self.workspace) / "src" / "demo04"
+        source_dir.mkdir(parents=True)
+        (source_dir / "main.js").write_text("console.log('ok')\n", encoding="utf-8")
+        self.run_cli(
+            "artifact",
+            str(task_id),
+            "--kind",
+            "source",
+            "--path",
+            "src/demo04/*",
+            "--summary",
+            "source files",
+        )
+        self.run_cli("complete-task", str(task_id), "--summary", "source files complete")
+
+        audit = json.loads(self.run_cli("audit", str(job_id), "--json"))
+
+        self.assertTrue(audit["complete"])
+        self.assertEqual(audit["missing_artifact_files"], [])
+
     def test_audit_quality_reports_weak_debugger_artifact_without_missing_file(self) -> None:
         job_id = self.submit_job()
         output = self.run_cli(
