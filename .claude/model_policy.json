@@ -96,6 +96,7 @@
     "CODEX_MODEL": "Overrides the selected model for emergency or experiment runs.",
     "CODEX_REASONING_EFFORT": "Overrides the selected reasoning effort for emergency or experiment runs.",
     "TASKCTL_SPEED_PROFILE=fast": "Downshifts taskctl worker role choices for lower-latency interactive work.",
+    "TASKCTL_SESSION_CONTEXT_PROFILE=compact": "Keeps Claude SessionStart policy injection small; set to full only for debugging expanded rules.",
     "TASKCTL_INTERACTIVE_SPEED_PROFILE=fast": "Adds --speed-profile fast to hook-suggested capability commands.",
     "TASKCTL_INTERACTIVE_ASYNC=1": "Adds --async to hook-suggested capability commands so submission returns before the worker finishes.",
     "TASKCTL_MODEL_POLICY": "Set to off to disable taskctl model routing.",

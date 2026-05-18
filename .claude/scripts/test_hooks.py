@@ -15,6 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 HOOK = ROOT / ".claude" / "scripts" / "hook_intercept_create.py"
+SESSION_HOOK = ROOT / ".claude" / "scripts" / "hook_session_start.py"
 PROMPT_HOOK = ROOT / ".claude" / "scripts" / "hook_user_prompt_submit.py"
 STOP_HOOK = ROOT / ".claude" / "scripts" / "hook_stop_focus.py"
 MAINTENANCE_MARKER = ROOT / ".claude" / "ALLOW_CONTROL_PLANE_WRITES"
@@ -110,6 +111,21 @@ class HookTests(unittest.TestCase):
                 )
             else:
                 self.assertTrue(script.startswith(".claude/scripts/"), command)
+
+    def test_session_start_defaults_to_compact_context(self) -> None:
+        code, output = run_hook(
+            SESSION_HOOK,
+            {"cwd": str(ROOT)},
+            {"TASKCTL_SESSION_CONTEXT_PROFILE": "compact"},
+        )
+
+        self.assertEqual(code, 0)
+        context = output["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("taskctl.py capability", context)
+        self.assertIn(display_path(ROOT / ".claude" / "scripts" / "taskctl.py"), context)
+        self.assertIn("Project Runtime", context)
+        self.assertNotIn("Mandatory Control Context", context)
+        self.assertLess(len(context), 3500)
 
     def test_blocks_direct_write_outside_claude(self) -> None:
         code, output = run_hook(HOOK, {"tool_name": "Write", "tool_input": {"file_path": "sample-page.html"}})

@@ -6,6 +6,14 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.33 - 2026-05-18
+
+- Changed SessionStart to inject a compact control context by default, removing
+  the duplicated expanded rule block that made simple Claude CLI turns start
+  with large prompt payloads.
+- Added `TASKCTL_SESSION_CONTEXT_PROFILE=compact` with `full` available only
+  when expanded startup rules are needed for debugging.
+
 ## 0.1.32 - 2026-05-18
 
 - Added a `--speed-profile fast` capability/run-next option that downshifts

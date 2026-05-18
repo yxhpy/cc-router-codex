@@ -128,6 +128,7 @@ class InstallTests(unittest.TestCase):
             self.assertIn("TASKCTL_BASH_GUARD_PROVIDER=codex", env_text)
             self.assertIn("TASKCTL_BASH_GUARD_CODEX_MODEL=gpt-5.4-mini", env_text)
             self.assertIn("TASKCTL_DEFAULT_SPEED_PROFILE=quality", env_text)
+            self.assertIn("TASKCTL_SESSION_CONTEXT_PROFILE=compact", env_text)
             self.assertIn("TASKCTL_INTERACTIVE_SPEED_PROFILE=quality", env_text)
             self.assertIn("TASKCTL_INTERACTIVE_ASYNC=0", env_text)
             self.assertIn("ASSETGEN_CODEX_MODEL=gpt-5.4-mini", env_text)

@@ -4,6 +4,7 @@ SessionStart hook - injects control-plane rules into the main model context.
 """
 
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -17,32 +18,30 @@ from hook_context import target_workspace
 import project_init
 from project_paths import script_command
 
-BASE_RULES = f"""## Codex Task Control Rules
+COMPACT_RULES = f"""## Codex Task Control Rules
 
-These rules are mandatory. They do not depend on explicit skill invocation.
+Mandatory compact policy for this session:
 
-1. ds v4 is the control plane only: choose exactly one bounded capability input at a time, inspect state, and decide whether to continue, stop, or ask the user.
-2. Do not implement, test, review, or close work directly in ds context.
-2a. Claude Code permission prompts are bypassed by default with `permissions.defaultMode=bypassPermissions`; policy enforcement is handled by project hooks, especially PreToolUse and Stop.
-3. All production work must be represented in SQLite through `{script_command('taskctl.py')}`.
-4. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns. Generated commands must pass the active target project directory as `--workspace`, not the control-plane location.
-4a. For long capability prompts, write a UTF-8 prompt file under the active target workspace's `.claude/task-plans/` directory with the file tool, then pass `--prompt-file .claude/task-plans/<name>.txt`. Do not use shell heredocs, redirection, `tee`, or `/tmp` prompt files.
-5. Codex workers own planning, divergence, requirements, prototype, UI/UX, asset generation, debugging, operations, security, documentation, release, full-stack implementation, tests, review, and closure.
-6. LLM routing may suggest a role composition, but it is advisory only. Execute one capability, inspect the result, then choose the next capability; do not enqueue the whole composition.
-7. Every Codex-bound task input must be authored by the main model and validated by `capability`; do not manually split normal work into submit/filter/enqueue/run-next commands.
-8. Use `taskctl.py status` or `taskctl.py audit` only after a capability command returns or fails. Use `taskctl.py audit --quality` for debugger/planner/uiux/reviewer/closer Markdown report artifacts. Do not use fixed workflows, import-plan, run-job, or dependency chains.
-8a. When command syntax is unclear, run `taskctl.py command <name> --workspace <project>` or `taskctl.py doctor --workspace <project>` instead of guessing or reading source. Hooks include directly executable `next_command` / `command_contract` fields and a `replacement_command` template on blocks. Command contracts include `state_input`, `state_output`, and `next_state`; use those fields to choose the next command from recorded state instead of retrying guessed syntax.
-9. A worker is successful only when required artifacts are recorded and their files exist; Windows sandbox failures are retryable failures, not completion.
-10. Role boundaries are enforced before Codex can run: planner/divergent/requirements/reviewer/closer/debugger/security are analysis-only, uiux is design-only, prototype is spec-only, assetgen is image-asset-only, operator owns operational work only, docs owns documentation only, release owns versioning/release artifacts only, fullstack is the only product-code role, and tester may write reports/screenshots/test files but no production source.
-11. Frontend UI/UX workers must use project design specs first; if none exist, run `{script_command('sync_design_refs.py')} --offline --quiet`, consult the control-plane `.claude/design-references` manifest, and record `design_reference_selection` plus `style_contract` before implementation. Selected design decisions must be traceable; do not add untraceable beautification. Prefer project/open-license images or video for real visuals. If needed media is missing, UI/UX should record an `asset_generation_brief`; assetgen must generate local raster assets through `{script_command('assetgen_exec.py')}`, first fast-checking/installing the local `image-2-prompt` MCP with `{script_command('prompt_template_mcp.py')}`, comparing installed/latest MCP git commit versions and warning if an upgrade may be needed, retrieving prompt templates, using `gpt-5.4-mini`, recording `local_asset_manifest`, and never using SVG as a generated asset fallback.
-11a. CONTEXT.md and docs/adr/ are optional project-owned soft inputs. Workers should read them when present before vocabulary, naming, architecture, persistence, API, deployment, dependency, storage, or hard-to-reverse decisions. Their absence is not a blocker, and workers must not create them unless the user explicitly asked for project context docs or an ADR.
-12. UserPromptSubmit routing, semantic task-input guarding, and ambiguous Bash command review are LLM-backed through `.claude/scripts/llm_router.py`, using `.claude/.env` provider/model settings. Codex CLI `gpt-5.4-mini` with an output schema is preferred for stable JSON decisions. Bash PreToolUse first blocks deterministic direct-write patterns and allows known lifecycle commands such as package-manager install/build/test; only ambiguous commands reach the model guard. Hook-generated commands may include `--route-token` to reuse the exact recent LLM route instead of running a duplicate classifier; deterministic role/artifact checks and `safety_filter.py` still run. Do not replace semantic routing or role-boundary judgment with regex/keyword rules.
-13. Production goals activate `.claude/task-plans/focus_state.json`. The Stop hook blocks final answers until `focus_guard.py complete` records result evidence or `focus_guard.py exhausted` records all attempted routes and blockers. After failures, record attempts, inspect logs/artifacts, search or try another viable route, and continue by default.
-14. Worker tasks record reusable lessons with `taskctl.py experience-add`; closer/reviewer tasks curate them and regenerate the compact learned-experience skill. Add atom metadata such as topic, skill, source command/path, or failure signature when useful. Use `experience-stale` for contradicted lessons and `experience-sync-skill --min-confidence 4` when broad reuse should exclude weak accepted lessons.
-14a. Bundled skill publication is governed by .claude/skill-manifest.json. Draft, deprecated, and private skills must not be published under .claude/skills/ or .claude/plugins/*/skills/. After editing bundled skills or plugin bridges, run `python .claude/scripts/skill_manifest_check.py` in an installed target, or `python tools/skill_manifest_check.py` in the source repository.
-15. Use `taskctl.py status` and `taskctl.py audit` for compact state summaries instead of reading full logs by default. For failed, blocked, or handed-off jobs, use `taskctl.py checkpoint-save`, `checkpoint-list`, `checkpoint-restore`, and `checkpoint-report` so retries start from recorded blockers, missing artifacts, next role, and resume hints.
-16. `.claude` is not a general write escape hatch. Claude may directly write runtime state such as `.claude/artifacts/**`, `.claude/task-plans/**`, and `.claude/scheduled_tasks.json`; control-plane source/config writes require explicit maintenance mode; product files still go through Codex/taskctl.
-17. Add new control-plane behavior as focused modules under `.claude/scripts/` instead of adding unrelated responsibilities to the legacy `taskctl.py` monolith."""
+- ds v4 is the controller only. Do not implement, test, review, or close production work directly in this context.
+- Production work must go through one bounded taskctl capability at a time:
+  `{script_command('taskctl.py')} capability --role <role> --title "<title>" --prompt "<bounded worker prompt>" --artifact <kind:path> --workspace <target> --goal "<goal>"`
+- Generated taskctl commands must use the active target project as `--workspace`; inspect `taskctl.py status` / `taskctl.py audit` after a capability returns before choosing the next step.
+- If syntax is unclear, run `{script_command('taskctl.py')} command capability --workspace <target>` or `doctor`; hook block responses include executable replacement commands.
+- Direct product writes, direct workspace data processing, and ad hoc multi-step workflows are blocked. Direct Claude writes are only for runtime state such as `.claude/artifacts/**`, `.claude/task-plans/**`, and `.claude/scheduled_tasks.json`.
+- Role boundaries are enforced by taskctl before Codex runs. `fullstack` owns product code; `tester` owns reports/tests; UI/UX, prototype, asset, review, docs, release, security, operations, and closure tasks stay in their own bounded roles.
+- Frontend work must use project design sources first; when missing, route UI/UX/style selection before implementation. Generated visual assets must be local raster files with a recorded manifest.
+- Production goals may activate the Stop focus guard; complete with `{script_command('focus_guard.py')} complete --workspace <target> --evidence "<evidence>"` only after required artifacts exist."""
+
+FULL_RULES = f"""{COMPACT_RULES}
+
+## Expanded Control Rules
+
+1. Use `taskctl.py capability` as the normal production entrypoint. It validates one main-model-authored prompt, stores one SQLite job/task, executes one Codex worker, records expected artifacts, and returns.
+2. For long capability prompts, write a UTF-8 prompt file under the active target workspace's `.claude/task-plans/` directory with the file tool, then pass `--prompt-file .claude/task-plans/<name>.txt`. Do not use shell heredocs, redirection, `tee`, or `/tmp` prompt files.
+3. LLM routing may suggest a role composition, but it is advisory only. Execute one capability, inspect the result, then choose the next capability; do not enqueue the whole composition.
+4. A worker is successful only when required artifacts are recorded and their files exist; Windows sandbox failures are retryable failures, not completion.
+5. UserPromptSubmit routing, semantic task-input guarding, and ambiguous Bash command review are LLM-backed through `.claude/scripts/llm_router.py`.
+6. Worker tasks record reusable lessons with `taskctl.py experience-add`; reviewer/closer tasks curate them and regenerate the compact learned-experience skill."""
 
 
 def read_optional(path: Path) -> str:
@@ -65,12 +64,23 @@ def read_hook_json() -> dict[str, object]:
     return {}
 
 
+def session_context_profile() -> str:
+    value = os.environ.get("TASKCTL_SESSION_CONTEXT_PROFILE", "compact").strip().lower()
+    return "full" if value == "full" else "compact"
+
+
+def base_context() -> str:
+    if session_context_profile() != "full":
+        return COMPACT_RULES
+    mandatory = read_optional(CLAUDE_DIR / "MANDATORY_CONTEXT.md")
+    return FULL_RULES if not mandatory else FULL_RULES + "\n\n" + mandatory
+
+
 def main():
     payload = read_hook_json()
     workspace = target_workspace(payload) if payload else str(Path.cwd().resolve(strict=False))
     runtime = project_init.apply_project_environment(workspace, set_db=False)
-    mandatory = read_optional(CLAUDE_DIR / "MANDATORY_CONTEXT.md")
-    context = BASE_RULES if not mandatory else BASE_RULES + "\n\n" + mandatory
+    context = base_context()
     if runtime.initialized:
         context += (
             "\n\n## Project Runtime\n"
