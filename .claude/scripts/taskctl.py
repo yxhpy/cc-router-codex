@@ -24,17 +24,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
 import artifact_quality
 import model_policy
 import command_catalog
 import project_init
-from project_paths import REPO_ROOT, normalize_external_path, script_command
+from project_paths import CLAUDE_DIR, REPO_ROOT, display_path, normalize_external_path, script_command
 import route_cache
 from task_input_filter import normalize_required_artifacts, require_valid_task_input, validate_task_input
 import worker_runner
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
 CLAUDE_DIR = SCRIPT_DIR.parent
 DEFAULT_DB = CLAUDE_DIR / "taskctl.sqlite3"
 ATOMIC_WORKFLOW = "atomic"
@@ -441,6 +444,8 @@ instead of doing another role's work.
 
 
 def frontend_design_footer() -> str:
+    design_root = display_path(CLAUDE_DIR / "design-references")
+    design_manifest = display_path(CLAUDE_DIR / "design-references" / "manifest.json")
     return f"""
 
 {FRONTEND_DESIGN_MARKER}
@@ -450,13 +455,13 @@ source traceability is mandatory:
 - First use project-local sources if present: DESIGN.md, design tokens, theme
   files, component docs, Storybook, screenshots, or existing components.
 - If no project design source exists and your role is uiux, run:
-  python .claude/scripts/sync_design_refs.py --offline --quiet
-  Then select suitable references from .claude/design-references/manifest.json
-  and the referenced DESIGN.md files. Record design_reference_selection and
-  style_contract artifacts. Every color, type scale, spacing, surface,
-  component state, motion, icon/media choice, and density decision must be
-  traceable to the selected project/reference source. Do not add untraceable
-  model beautification.
+  {script_command('sync_design_refs.py')} --offline --quiet
+  Then select suitable references from the control-plane `.claude/design-references`
+  cache at {design_manifest}. Manifest paths are relative to {design_root}.
+  Record design_reference_selection and style_contract artifacts. Every color,
+  type scale, spacing, surface, component state, motion, icon/media choice, and
+  density decision must be traceable to the selected project/reference source.
+  Do not add untraceable model beautification.
 - If your role is prototype, assetgen, fullstack, tester, or reviewer, use the
   project design source or prior design_reference_selection/style_contract artifacts.
   For a new visual frontend without those sources, stop and report that a uiux

@@ -8,6 +8,7 @@ if "%~1"=="" (
 
 set "SCRIPT_DIR=%~dp0"
 set "ENV_FILE=%SCRIPT_DIR%..\.env"
+set "CC_ROUTER_BOOTSTRAP=import os,runpy,sys; script=sys.argv[1]; sys.path.insert(0, os.path.dirname(os.path.abspath(script))); sys.argv=sys.argv[1:]; runpy.run_path(script, run_name='__main__')"
 if exist "%ENV_FILE%" (
   for /f "usebackq eol=# tokens=1,* delims==" %%A in ("%ENV_FILE%") do (
     set "ENV_KEY=%%A"
@@ -19,7 +20,12 @@ if defined TASKCTL_PYTHON (
   if exist "%TASKCTL_PYTHON%" (
     "%TASKCTL_PYTHON%" --version >nul 2>nul
     if not errorlevel 1 (
-      "%TASKCTL_PYTHON%" %*
+      set "FIRST_ARG=%~1"
+      if "!FIRST_ARG:~0,1!"=="-" (
+        "%TASKCTL_PYTHON%" %*
+      ) else (
+        "%TASKCTL_PYTHON%" -c "!CC_ROUTER_BOOTSTRAP!" %*
+      )
       exit /b %errorlevel%
     )
   )
@@ -29,7 +35,12 @@ where python >nul 2>nul
 if not errorlevel 1 (
   python --version >nul 2>nul
   if not errorlevel 1 (
-    python %*
+    set "FIRST_ARG=%~1"
+    if "!FIRST_ARG:~0,1!"=="-" (
+      python %*
+    ) else (
+      python -c "!CC_ROUTER_BOOTSTRAP!" %*
+    )
     exit /b %errorlevel%
   )
 )
@@ -38,7 +49,12 @@ where py >nul 2>nul
 if not errorlevel 1 (
   py -3 --version >nul 2>nul
   if not errorlevel 1 (
-    py -3 %*
+    set "FIRST_ARG=%~1"
+    if "!FIRST_ARG:~0,1!"=="-" (
+      py -3 %*
+    ) else (
+      py -3 -c "!CC_ROUTER_BOOTSTRAP!" %*
+    )
     exit /b %errorlevel%
   )
 )

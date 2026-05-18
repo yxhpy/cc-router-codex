@@ -6,6 +6,19 @@ All notable changes to `cc-router-codex` are tracked here.
 
 - No changes yet.
 
+## 0.1.31 - 2026-05-18
+
+- Fixed non-`~/.claude` installs, including `~/.grok`, when they reuse the
+  portable Python runtime: Windows `run_python.cmd` now bootstraps the target
+  script directory before executing the script, and direct entrypoint scripts
+  insert their own directory before importing control-plane modules.
+- Clarified frontend UI/UX design-reference instructions so workers run the
+  actual control-plane `sync_design_refs.py` command and read the control-plane
+  `.claude/design-references/manifest.json`, instead of looking for missing
+  scripts or manifests in lightweight project runtimes.
+- Added regression coverage for the Windows runner bootstrap and the generated
+  worker design-reference prompt.
+
 ## 0.1.30 - 2026-05-18
 
 - Changed user-level installs to merge the control plane into `~/.claude`

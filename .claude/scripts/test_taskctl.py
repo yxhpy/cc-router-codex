@@ -240,6 +240,8 @@ class TaskCtlTests(unittest.TestCase):
         self.assertIn("Do not run", row["prompt"])
         self.assertIn("npm run dev", row["prompt"])
         self.assertIn(".claude/design-references", row["prompt"])
+        self.assertIn(str(taskctl.CLAUDE_DIR / "design-references" / "manifest.json").replace("\\", "/"), row["prompt"])
+        self.assertIn(str(taskctl.SCRIPT_DIR / "sync_design_refs.py").replace("\\", "/"), row["prompt"])
         self.assertIn("asset_generation_brief", row["prompt"])
         self.assertIn("local_asset_manifest", row["prompt"])
         self.assertIn(str(taskctl.SCRIPT_DIR / "taskctl.py").replace("\\", "/"), row["prompt"])

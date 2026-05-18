@@ -212,6 +212,13 @@ class InstallTests(unittest.TestCase):
             "C:/Users/alice/AppData/Local/Programs/Python/python.exe",
         )
 
+    def test_windows_runner_bootstraps_target_script_directory(self) -> None:
+        content = (ROOT / ".claude" / "scripts" / "run_python.cmd").read_text(encoding="utf-8")
+
+        self.assertIn("runpy.run_path", content)
+        self.assertIn("sys.path.insert(0", content)
+        self.assertIn("os.path.dirname(os.path.abspath(script))", content)
+
     def test_existing_install_requires_y_before_overwrite(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

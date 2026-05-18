@@ -12,8 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
+from pathlib import Path
 import sys
 from dataclasses import dataclass, field
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 from project_paths import script_command
 

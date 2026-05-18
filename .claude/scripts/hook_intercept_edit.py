@@ -9,7 +9,12 @@ direct-write policy.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 import sys
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
 
 from claude_write_policy import classify_direct_write, maintenance_enable_hint
 from hook_context import hook_tool_input, hook_tool_name, is_grok_hook, target_workspace
