@@ -44,6 +44,12 @@ Claude Code to the small tool set needed around taskctl, disables slash-command
 loading, and ignores unrelated MCP configs. For pure taskctl submit/status/audit
 turns, `.claude/scripts/claude_submit.cmd` is stricter and exposes only Bash.
 
+After any interaction-speed or launcher change, validate with the checklist in
+`.claude/INTERACTIVE_SPEED_VALIDATION.md`. The required proof is: full tests pass,
+both `~/.claude` and `~/.grok` installs report the new version, compact/fast
+env knobs are active, `claude_fast.cmd` loads only six local tools with no MCP,
+and `claude_submit.cmd` loads only Bash with no MCP while returning `OK`.
+
 For production completion, rely on the capability audit result and then record
 focus completion or exhaustion with the installed `focus_guard.py` command when
 the Stop hook has an active goal.
